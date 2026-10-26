@@ -10,19 +10,19 @@ namespace eon {
 struct FlyCamera {
     Camera3D cam{};
     void Init(Vector3 pos, Vector3 target);
-    void Update(float dt);
+    void Update(float dt, bool useWheel = true);
 };
+
+inline Vec3 ToEon(Vector3 v) { return {v.x, v.y, v.z}; }
+inline Vector3 ToRl(const Vec3& v) { return {v.x, v.y, v.z}; }
 
 class ZoneRenderer {
 public:
     bool Init();
     void Unload();
 
-    // Draws the zone lit by its lamps. selectedId highlights an entity (operator/editor only).
-    void Draw(const World& world, const Camera3D& cam, int selectedId = -1);
-
-    // Ray pick against oriented entity boxes. Returns entity id or -1.
-    static int Pick(const World& world, Ray ray, float* outDist = nullptr);
+    // Draws a render frame lit by its lights. selectedEntity outlines that entity (operator/editor only).
+    void Draw(const RenderFrame& frame, const Camera3D& cam, int selectedEntity = -1);
 
     float ambient = 0.10f;  // light with all lamps off (0..1)
 

@@ -6,12 +6,9 @@
 #include <nlohmann/json.hpp>
 
 #include "Circuit.h"
+#include "Math.h"
 
 namespace eon {
-
-struct Vec3 {
-    float x = 0, y = 0, z = 0;
-};
 
 struct Rgb {
     unsigned char r = 200, g = 200, b = 200;

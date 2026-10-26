@@ -31,12 +31,12 @@ wa += [
     # Light circuit: battery in wall box -> wall switch -> ceiling lamp
     ent(20, "WallBattery_12V", "battery", (2.93, 1.0, 1.6), (0.06, 0.15, 0.1), (60, 60, 60),
         params={"voltage": 12.0, "internalR": 0.05, "capacityAh": 7.0}),
-    ent(21, "WallSwitch", "switch", (2.96, 1.2, 1.0), (0.02, 0.12, 0.08), (245, 245, 245)),
+    ent(21, "WallSwitch", "switch", (2.96, 1.2, 1.0), (0.02, 0.12, 0.08), (245, 245, 245), params={"axis": [-1, 0, 0]}),
     ent(22, "CeilingLamp", "lamp", (0, 2.5, 0), (0.3, 0.1, 0.3), (255, 240, 200),
         params={"ratedPower": 10.0, "ratedVoltage": 12.0}),
-    ent(23, "WireA", "wire", (2.94, 1.1, 1.3), (0.01, 0.01, 0.6), (180, 60, 40), params={"length": 0.6}),
-    ent(24, "WireB", "wire", (1.5, 2.55, 0.5), (3.0, 0.01, 0.01), (180, 60, 40), params={"length": 4.0}),
-    ent(25, "WireC", "wire", (1.5, 2.56, 0.8), (3.0, 0.01, 0.01), (40, 40, 40), params={"length": 5.0}),
+    ent(23, "WireA", "wire", (2.94, 1.1, 1.3), (0.01, 0.01, 0.6), (180, 60, 40), params={"length": 0.6, "hidden": True}),
+    ent(24, "WireB", "wire", (1.5, 2.55, 0.5), (3.0, 0.01, 0.01), (180, 60, 40), params={"length": 4.0, "hidden": True}),
+    ent(25, "WireC", "wire", (1.5, 2.56, 0.8), (3.0, 0.01, 0.01), (40, 40, 40), params={"length": 5.0, "hidden": True}),
 ]
 wa_links = [[20, 0, 23, 0], [23, 1, 21, 0], [21, 1, 24, 0], [24, 1, 22, 0], [22, 1, 25, 0], [25, 1, 20, 1]]
 
@@ -51,17 +51,17 @@ tz += [
         params={"ratedPower": 1.0, "ratedVoltage": 9.0}),
     ent(23, "Wire_Red", "wire", (-0.2, 0.745, 0.15), (0.4, 0.006, 0.006), (200, 40, 40), mass=0.01, params={"length": 0.4}),
     ent(24, "Wire_Black1", "wire", (0.2, 0.745, 0.15), (0.4, 0.006, 0.006), (30, 30, 30), mass=0.01, params={"length": 0.4}),
-    ent(25, "Wire_Black2", "wire", (0, 0.745, -0.05), (0.8, 0.006, 0.006), (30, 30, 30), mass=0.01, params={"length": 0.8}),
+    ent(25, "Wire_Black2", "wire", (0, 0.745, -0.05), (0.8, 0.006, 0.006), (30, 30, 30), mass=0.01, params={"length": 1.0}),
     ent(30, "SpareBattery_9V", "battery", (0.55, 0.765, -0.25), (0.026, 0.048, 0.017), (30, 30, 30), mass=0.045,
         params={"voltage": 9.0, "internalR": 1.5, "capacityAh": 0.5, "charge": 0.2}),
     # Room light: hidden battery -> switch by the door -> ceiling lamp
     ent(40, "RoomBattery_12V", "battery", (2.43, 1.0, 2.2), (0.06, 0.15, 0.1), (60, 60, 60),
         params={"voltage": 12.0, "internalR": 0.05, "capacityAh": 7.0}),
-    ent(41, "RoomSwitch", "switch", (2.46, 1.2, 1.8), (0.02, 0.12, 0.08), (245, 245, 245), params={"closed": True}),
+    ent(41, "RoomSwitch", "switch", (2.46, 1.2, 1.8), (0.02, 0.12, 0.08), (245, 245, 245), params={"closed": True, "axis": [-1, 0, 0]}),
     ent(42, "RoomLamp", "lamp", (0, 2.7, 0), (0.4, 0.1, 0.4), (255, 245, 220), params={"ratedPower": 15.0, "ratedVoltage": 12.0}),
-    ent(43, "RoomWireA", "wire", (2.44, 1.1, 2.0), (0.01, 0.01, 0.4), (180, 60, 40), params={"length": 0.4}),
-    ent(44, "RoomWireB", "wire", (1.2, 2.74, 0.9), (2.4, 0.01, 0.01), (180, 60, 40), params={"length": 3.5}),
-    ent(45, "RoomWireC", "wire", (1.2, 2.75, 1.1), (2.4, 0.01, 0.01), (40, 40, 40), params={"length": 4.5}),
+    ent(43, "RoomWireA", "wire", (2.44, 1.1, 2.0), (0.01, 0.01, 0.4), (180, 60, 40), params={"length": 0.4, "hidden": True}),
+    ent(44, "RoomWireB", "wire", (1.2, 2.74, 0.9), (2.4, 0.01, 0.01), (180, 60, 40), params={"length": 3.5, "hidden": True}),
+    ent(45, "RoomWireC", "wire", (1.2, 2.75, 1.1), (2.4, 0.01, 0.01), (40, 40, 40), params={"length": 4.5, "hidden": True}),
     ent(31, "SpareWire", "wire", (-0.5, 0.745, -0.25), (0.3, 0.006, 0.006), (40, 120, 200), mass=0.008, params={"length": 0.3}),
 ]
 tz_links = [[20, 0, 23, 0], [23, 1, 21, 0], [21, 1, 24, 0], [24, 1, 22, 0], [22, 1, 25, 0], [25, 1, 20, 1],

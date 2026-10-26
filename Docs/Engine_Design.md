@@ -32,6 +32,14 @@ The firewall is enforced in code: the mind bridge (step 5) can only read from `S
   - Later: diode/LED, fuse, relay, heater, fan, door actuator, sensor plates.
 - **No magic:** nothing activates without a physical cause chain.
 
+## How contact works (step 2)
+- Every electrical part has two terminal points on its body. Terminals within 6 mm of each other conduct (e.g. a bulb's contacts resting on a battery).
+- Wire ends are clips. Released within 12 mm of a terminal, a clip latches (fixed joint). Pulling harder than its break force (default 12 N) unclips it; a light object it is clipped to gets dragged along instead.
+- Buttons: plunger on a slider with a preloaded spring (~2.5 N to press, 8 mm travel); contacts close past 60% travel.
+- Switches: rocker on a hinge with a snap-action detent; contacts close on one side.
+- Hands (operator now, Jenny later) are kinematic points that move at arm speed and slip if the object resists more than 60 N.
+- Hidden infrastructure wiring (inside walls) is `"hidden": true` and stays ideal.
+
 ## Zones
 `content/zones/*.json` — entities (internal name, part type, transform, size, mass, params) and terminal connections. The editor writes them; the sim loads them.
 

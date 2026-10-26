@@ -4,6 +4,7 @@
 
 #include "core/Circuit.h"
 #include "core/World.h"
+#include "core/Physics.h"
 #include "core/Zone.h"
 
 using namespace eon;
@@ -145,38 +146,133 @@ static void TestZoneRoundTrip(const std::string& contentDir) {
     }
 }
 
+static int FindByName(const World& w, const std::string& name) {
+    for (const Entity& e : w.GetZone().entities) if (e.name == name) return e.id;
+    return -1;
+}
+
+static bool FrameSane(const World& w) {
+    RenderFrame f;
+    w.BuildRenderFrame(f);
+    for (const RenderPiece& p : f.pieces) {
+        if (!std::isfinite(p.pos.x) || !std::isfinite(p.pos.y) || !std::isfinite(p.pos.z)) return false;
+        if (std::abs(p.pos.x) > 4 || std::abs(p.pos.z) > 4 || p.pos.y < -0.5f || p.pos.y > 3.5f) return false;
+    }
+    return true;
+}
+
 static void TestWaitingAreaLight(const std::string& contentDir) {
     World w;
     CHECK(w.Load(contentDir + "/zones/waiting_area.json"));
-    int lamp = -1, sw = -1;
-    for (const Entity& e : w.GetZone().entities) {
-        if (e.type == "lamp") lamp = e.id;
-        if (e.type == "switch") sw = e.id;
-    }
+    const int lamp = FindByName(w, "CeilingLamp");
+    const int sw = FindByName(w, "WallSwitch");
     CHECK(lamp > 0 && sw > 0);
-    w.Tick(0.1);
-    CHECK_NEAR(w.PartOf(lamp)->brightness, 0.0, 1e-6);
-    w.Toggle(sw);
-    w.Tick(0.1);
+    w.Advance(0.5);
+    CHECK_NEAR(w.PartOf(lamp)->brightness, 0.0, 1e-6);   // starts off
+    w.DebugActuate(sw, true);                            // push the rocker
+    w.Advance(0.6);
     CHECK(w.PartOf(lamp)->brightness > 0.9);
+    w.Advance(2.0);                                         // stays on by itself (bistable)
+    CHECK(w.PartOf(lamp)->brightness > 0.9);
+    w.DebugActuate(sw, false);
+    w.Advance(0.6);
+    CHECK_NEAR(w.PartOf(lamp)->brightness, 0.0, 1e-6);
+    CHECK(FrameSane(w));
 }
 
 static void TestTestZoneButton(const std::string& contentDir) {
     World w;
     CHECK(w.Load(contentDir + "/zones/test_zone_01.json"));
-    int lamp = -1, button = -1;
-    for (const Entity& e : w.GetZone().entities) {
-        if (e.name == "BulbOnStand") lamp = e.id;
-        if (e.type == "button") button = e.id;
-    }
-    w.Tick(0.1);
+    const int lamp = FindByName(w, "BulbOnStand");
+    const int room = FindByName(w, "RoomLamp");
+    const int button = FindByName(w, "BigButton");
+    w.Advance(1.5);                                         // let everything settle
+    CHECK(w.PartOf(room)->brightness > 0.9);             // room switch starts closed
     CHECK_NEAR(w.PartOf(lamp)->brightness, 0.0, 1e-6);
-    w.SetPressed(button, true);
-    w.Tick(0.1);
+    CHECK(w.ClipAttachedEntity(FindByName(w, "Wire_Red"), 0) == FindByName(w, "Battery_9V"));
+    w.DebugActuate(button, true);                        // press the plunger down
+    w.Advance(0.3);
     CHECK(w.PartOf(lamp)->brightness > 0.5);
-    w.SetPressed(button, false);
-    w.Tick(0.1);
+    w.DebugActuate(button, false);                       // spring returns it
+    w.Advance(0.3);
     CHECK_NEAR(w.PartOf(lamp)->brightness, 0.0, 1e-6);
+    w.Advance(3.0);
+    CHECK(FrameSane(w));
+}
+
+static void TestLooseBatterySettles(const std::string& contentDir) {
+    World w;
+    CHECK(w.Load(contentDir + "/zones/test_zone_01.json"));
+    const int spare = FindByName(w, "SpareBattery_9V");
+    w.Advance(2.0);
+    const Vec3 p = w.BodyPosition(w.MainBodyOf(spare));
+    CHECK_NEAR(p.y, 0.74 + 0.024, 0.01);                 // standing on the table top
+}
+
+static Zone TerminalBench() {
+    Zone z;
+    z.name = "Bench";
+    Entity floor; floor.id = 1; floor.name = "Floor"; floor.pos = {0, -0.05f, 0}; floor.size = {4, 0.1f, 4};
+    Entity post; post.id = 2; post.name = "Post"; post.type = "resistor"; post.pos = {0, 0.05f, 0}; post.size = {0.1f, 0.1f, 0.1f};
+    post.params["resistance"] = 10.0;
+    Entity wire; wire.id = 3; wire.name = "Lead"; wire.type = "wire"; wire.pos = {0.3f, 0.01f, 0}; wire.size = {0.4f, 0.005f, 0.005f};
+    wire.massKg = 0.01f; wire.params["length"] = 0.4;
+    z.entities = {floor, post, wire};
+    z.links = {{3, 0, 2, 1}};                            // lead end 0 clipped onto post terminal B
+    return z;
+}
+
+static void TestClipPullOffAndReattach() {
+    World w;
+    w.SetZone(TerminalBench());
+    w.Advance(1.0);
+    CHECK(w.ClipAttachedEntity(3, 0) == 2);
+
+    const int clip = w.ClipBodyOf(3, 0);
+    const Vec3 start = w.BodyPosition(clip);
+    w.BeginGrab(clip, start);
+    w.SetGrabTarget(start + Vec3{0.25f, 0.3f, 0});        // yank it away
+    w.Advance(1.0);
+    CHECK(w.ClipAttachedEntity(3, 0) == 0);             // pulled off (post is fixed)
+
+    const Vec3 term = w.TerminalPositions(2)[1];
+    w.SetGrabTarget(term);                               // bring it back and let go
+    w.Advance(1.5);
+    w.EndGrab();
+    w.Advance(0.5);
+    CHECK(w.ClipAttachedEntity(3, 0) == 2);             // latched again
+    CHECK(FrameSane(w));
+}
+
+static void TestDirectTouchLightsBulb() {
+    Zone z;
+    Entity bat; bat.id = 1; bat.name = "Bat"; bat.type = "battery"; bat.pos = {0, 1, 0}; bat.size = {0.026f, 0.048f, 0.017f};
+    bat.params = {{"voltage", 9.0}, {"internalR", 1.5}, {"capacityAh", 0.5}};
+    Entity bulb; bulb.id = 2; bulb.name = "Bulb"; bulb.type = "lamp"; bulb.size = {0.013f, 0.04f, 0.013f};
+    bulb.params = {{"ratedPower", 1.0}, {"ratedVoltage", 9.0}};
+    bulb.pos = {0, 1 + 0.024f + 0.7f * 0.02f, 0};       // bulb contacts resting on battery terminals
+    z.entities = {bat, bulb};
+
+    World w;
+    w.SetZone(z);
+    w.Advance(0.1);
+    CHECK(w.PartOf(2)->brightness > 0.5);
+
+    z.entities[1].pos.y += 0.02f;                        // lift it 2 cm: no contact
+    w.SetZone(z);
+    w.Advance(0.1);
+    CHECK_NEAR(w.PartOf(2)->brightness, 0.0, 1e-6);
+}
+
+static void TestHingeAndSliderBasics() {
+    Physics ph;
+    BodyDesc base; base.halfExtent = {0.05f, 0.05f, 0.05f};
+    const BodyHandle b = ph.CreateBody(base);
+    BodyDesc lev; lev.pos = {0, 0.06f, 0}; lev.halfExtent = {0.02f, 0.005f, 0.01f}; lev.mass = 0.01f;
+    const BodyHandle l = ph.CreateBody(lev);
+    const Quat q = Quat::AxisAngle({0, 0, 1}, 0.2f);
+    const ConstraintHandle h = ph.AddHinge(b, l, {0, 0.05f, 0}, {0, 0, 1}, {0, 1, 0}, q.Rotate({0, 1, 0}), -0.3f, 0.3f, 0.f);
+    CHECK_NEAR(ph.HingeAngle(h), 0.2, 0.02);            // initial angle follows the normals
 }
 
 int main(int argc, char** argv) {
@@ -190,8 +286,12 @@ int main(int argc, char** argv) {
     TestBatteryDrains();
     TestMotor();
     TestZoneRoundTrip(content);
+    TestHingeAndSliderBasics();
     TestWaitingAreaLight(content);
     TestTestZoneButton(content);
+    TestLooseBatterySettles(content);
+    TestClipPullOffAndReattach();
+    TestDirectTouchLightsBulb();
     std::printf("%d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
 }

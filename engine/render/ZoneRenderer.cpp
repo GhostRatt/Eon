@@ -1,7 +1,6 @@
 #include "ZoneRenderer.h"
 
 #include <algorithm>
-#include <cfloat>
 #include <vector>
 
 #include "raymath.h"
@@ -54,12 +53,6 @@ void main() {
 }
 )";
 
-Quaternion EntityRot(const Entity& e) {
-    return QuaternionFromEuler(e.rotDeg.x * DEG2RAD, e.rotDeg.y * DEG2RAD, e.rotDeg.z * DEG2RAD);
-}
-
-Vector3 V(const Vec3& v) { return {v.x, v.y, v.z}; }
-
 } // namespace
 
 void FlyCamera::Init(Vector3 pos, Vector3 target) {
@@ -70,7 +63,7 @@ void FlyCamera::Init(Vector3 pos, Vector3 target) {
     cam.projection = CAMERA_PERSPECTIVE;
 }
 
-void FlyCamera::Update(float dt) {
+void FlyCamera::Update(float dt, bool useWheel) {
     const float speed = (IsKeyDown(KEY_LEFT_SHIFT) ? 6.f : 2.f) * dt;
     Vector3 move{0, 0, 0};
     if (IsKeyDown(KEY_W)) move.x += speed;
@@ -86,7 +79,7 @@ void FlyCamera::Update(float dt) {
         rot.x = d.x * 0.15f;
         rot.y = d.y * 0.15f;
     }
-    UpdateCameraPro(&cam, move, rot, -GetMouseWheelMove() * 0.3f);
+    UpdateCameraPro(&cam, move, rot, useWheel ? -GetMouseWheelMove() * 0.3f : 0.f);
 }
 
 bool ZoneRenderer::Init() {
@@ -112,18 +105,12 @@ void ZoneRenderer::Unload() {
     ready_ = false;
 }
 
-void ZoneRenderer::Draw(const World& world, const Camera3D& cam, int selectedId) {
-    const Zone& zone = world.GetZone();
-
-    // Lights come from lamps that are actually powered.
+void ZoneRenderer::Draw(const RenderFrame& frame, const Camera3D& cam, int selectedEntity) {
     std::vector<Vector3> lightPos, lightCol;
-    for (const Entity& e : zone.entities) {
-        if (e.type != "lamp" || e.part < 0) continue;
-        const Part& p = world.GetCircuit().GetPart(e.part);
-        if (p.brightness <= 0.001 || lightPos.size() >= 8) continue;
-        const float k = static_cast<float>(p.brightness * p.ratedPower) * 0.4f;
-        lightPos.push_back({e.pos.x, e.pos.y - e.size.y * 0.6f, e.pos.z});
-        lightCol.push_back({k * 1.0f, k * 0.92f, k * 0.78f}); // warm incandescent
+    for (const RenderLight& l : frame.lights) {
+        if (lightPos.size() >= 8) break;
+        lightPos.push_back(ToRl(l.pos));
+        lightCol.push_back(ToRl(l.color));
     }
     const int count = static_cast<int>(lightPos.size());
     SetShaderValue(shader_, locLightCount_, &count, SHADER_UNIFORM_INT);
@@ -134,46 +121,22 @@ void ZoneRenderer::Draw(const World& world, const Camera3D& cam, int selectedId)
     SetShaderValue(shader_, locAmbient_, &ambient, SHADER_UNIFORM_FLOAT);
 
     BeginMode3D(cam);
-    for (const Entity& e : zone.entities) {
-        float emissive = 0.f;
-        if (e.type == "lamp" && e.part >= 0) {
-            emissive = static_cast<float>(world.GetCircuit().GetPart(e.part).brightness) * 2.f;
-        }
-        SetShaderValue(shader_, locEmissive_, &emissive, SHADER_UNIFORM_FLOAT);
-
-        Vector3 axis{0, 1, 0};
+    for (const RenderPiece& p : frame.pieces) {
+        SetShaderValue(shader_, locEmissive_, &p.emissive, SHADER_UNIFORM_FLOAT);
+        Vec3 axis;
         float angle = 0.f;
-        QuaternionToAxisAngle(EntityRot(e), &axis, &angle);
-        DrawModelEx(cube_, V(e.pos), axis, angle * RAD2DEG, V(e.size), Color{e.color.r, e.color.g, e.color.b, 255});
+        p.rot.ToAxisAngle(axis, angle);
+        DrawModelEx(cube_, ToRl(p.pos), ToRl(axis), angle * RAD2DEG, ToRl(p.size), Color{p.color.r, p.color.g, p.color.b, 255});
 
-        if (e.id == selectedId) {
+        if (p.entity == selectedEntity && selectedEntity > 0) {
             rlPushMatrix();
-            rlTranslatef(e.pos.x, e.pos.y, e.pos.z);
+            rlTranslatef(p.pos.x, p.pos.y, p.pos.z);
             rlRotatef(angle * RAD2DEG, axis.x, axis.y, axis.z);
-            DrawCubeWires({0, 0, 0}, e.size.x + 0.01f, e.size.y + 0.01f, e.size.z + 0.01f, YELLOW);
+            DrawCubeWires({0, 0, 0}, p.size.x + 0.004f, p.size.y + 0.004f, p.size.z + 0.004f, YELLOW);
             rlPopMatrix();
         }
     }
     EndMode3D();
-}
-
-int ZoneRenderer::Pick(const World& world, Ray ray, float* outDist) {
-    int best = -1;
-    float bestDist = FLT_MAX;
-    for (const Entity& e : world.GetZone().entities) {
-        const Quaternion inv = QuaternionInvert(EntityRot(e));
-        Ray local;
-        local.position = Vector3RotateByQuaternion(Vector3Subtract(ray.position, V(e.pos)), inv);
-        local.direction = Vector3RotateByQuaternion(ray.direction, inv);
-        const Vector3 h{e.size.x * 0.5f, e.size.y * 0.5f, e.size.z * 0.5f};
-        const RayCollision hit = GetRayCollisionBox(local, BoundingBox{Vector3Negate(h), h});
-        if (hit.hit && hit.distance < bestDist) {
-            bestDist = hit.distance;
-            best = e.id;
-        }
-    }
-    if (outDist) *outDist = bestDist;
-    return best;
 }
 
 } // namespace eon

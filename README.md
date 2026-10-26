@@ -19,7 +19,11 @@ build\bin\Release\eon_sim.exe
 build\bin\Release\eon_editor.exe
 build\bin\Release\eon_tests.exe
 ```
-Dependencies (raylib 5.5, nlohmann/json) download automatically.
+Dependencies (raylib 5.5, Jolt Physics 5.6, nlohmann/json) download automatically.
+
+### Controls
+- **Sim:** RMB look, WASD/QE fly, LMB grab and carry (wheel = reach), F push with ~4 N, 1/2 switch zones, R reset, H HUD.
+- **Editor:** EDIT mode — LMB select, arrows/PgUp/PgDn move, R/F rotate, N new box, Ctrl+D duplicate, Del delete, Ctrl+S save. P toggles PLAY mode (physics on, grab/push/Space to test); stopping restores the layout.
 
 ## Status
 | Module | Status |
@@ -27,8 +31,8 @@ Dependencies (raylib 5.5, nlohmann/json) download automatically.
 | `engine/core` Circuit | done — nodal solver: batteries (drain, sag, internal resistance), wires, switches, buttons, lamps, motors |
 | `engine/core` Zone/World | done — JSON zones, fixed 120 Hz sim |
 | `engine/render` | done — lamp-lit renderer, picking, fly camera |
-| `apps/sim`, `apps/editor` | step 1 shells |
-| Physics (Jolt), physical buttons, rope wires | step 2 |
+| `engine/core` Physics/World | done — Jolt 5.6: real mass/friction, spring buttons, bistable rocker switches, rope wires with clips that latch on release and pull off past 12 N, touching terminals conduct, kinematic grab hand with grip slip |
+| `apps/sim`, `apps/editor` | operator hand (grab/carry, push); editor edit/play modes, terminal markers |
 | Editor tools | step 3 |
 | Jenny (body, IK, soft tissue) | step 4 |
 | Mind bridge + sensor firewall, OBS | step 5 |

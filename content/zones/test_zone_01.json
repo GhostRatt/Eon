@@ -355,7 +355,7 @@
       ],
       "mass": 0.01,
       "params": {
-        "length": 0.8
+        "length": 1.0
       }
     },
     {
@@ -447,7 +447,12 @@
       ],
       "mass": 0,
       "params": {
-        "closed": true
+        "closed": true,
+        "axis": [
+          -1,
+          0,
+          0
+        ]
       }
     },
     {
@@ -506,7 +511,8 @@
       ],
       "mass": 0,
       "params": {
-        "length": 0.4
+        "length": 0.4,
+        "hidden": true
       }
     },
     {
@@ -535,7 +541,8 @@
       ],
       "mass": 0,
       "params": {
-        "length": 3.5
+        "length": 3.5,
+        "hidden": true
       }
     },
     {
@@ -564,7 +571,8 @@
       ],
       "mass": 0,
       "params": {
-        "length": 4.5
+        "length": 4.5,
+        "hidden": true
       }
     },
     {

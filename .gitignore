@@ -21,3 +21,6 @@ build/
 build-*/
 out/
 /*.png
+
+# Licensed character model files (kept local, not in git)
+content/characters/*/source/

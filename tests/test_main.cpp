@@ -1,7 +1,10 @@
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <string>
 
+#include "character/Character.h"
+#include "character/Posture.h"
 #include "core/Circuit.h"
 #include "core/World.h"
 #include "core/Physics.h"
@@ -275,6 +278,83 @@ static void TestHingeAndSliderBasics() {
     CHECK_NEAR(ph.HingeAngle(h), 0.2, 0.02);            // initial angle follows the normals
 }
 
+static void TestCharacterImport() {
+    CharacterAsset a;
+    std::string err;
+    const bool ok = ImportFbx(std::string(EON_TEST_DATA) + "/test_rig.fbx", a, {}, &err);
+    if (!ok) std::printf("  import error: %s\n", err.c_str());
+    CHECK(ok);
+    if (!ok) return;
+    CHECK(a.bones.size() >= 20);
+    CHECK(a.VertexCount() > 5000);
+    Character ch;
+    CHECK(ch.Init(&a));
+    const RigMap& r = ch.Rig();
+    CHECK(r.pelvis >= 0 && r.head >= 0 && r.hand[0] >= 0 && r.hand[1] >= 0);
+    CHECK(r.breast[0] >= 0 && r.glute[1] >= 0);
+    CHECK_NEAR(ch.Height(), 1.78, 0.08);
+
+    // Facing: breasts end up in front (+Z), left hand on +X side when facing +Z? (right-handed: left = +X)
+    ch.ResetPose();
+    CHECK(ch.BonePos(r.breast[0]).z > ch.BonePos(r.SpineTop()).z);
+
+    // Bind pose skinning reproduces the mesh (placed on the floor)
+    ch.Skin();
+    float lo = 1e9f;
+    for (const Vec3& p : ch.SkinnedPos(0)) lo = std::min(lo, p.y);
+    CHECK_NEAR(lo, 0.0, 0.01);
+
+    // Two-bone IK reaches a target
+    const Vec3 target = ch.BonePos(r.upperarm[0]) + Vec3{0.1f, -0.45f, 0.15f};
+    ch.SolveTwoBone(r.upperarm[0], r.lowerarm[0], r.hand[0], target, ch.BonePos(r.upperarm[0]) + Vec3{0, -0.3f, -0.5f});
+    CHECK_NEAR(Distance(ch.BonePos(r.hand[0]), target), 0.0, 0.005);
+
+    // Morph target exists and moves vertices
+    CHECK(!ch.MorphNames().empty());
+
+    // Capsules fitted; hands never inside the body after limb collision
+    CHECK(ch.Capsules().size() >= 8);
+    PostureParams pp;
+    pp.motion = TestMotion::HandsOnChest;
+    for (int f = 0; f < 60; ++f) {
+        pp.time = f / 60.f;
+        ApplyPosture(ch, pp);
+        ch.UpdateLimbCollision(1 / 60.f);
+    }
+    float worst = 1.f;
+    for (int i = 0; i < 2; ++i) {
+        const Vec3 h = ch.BonePos(r.hand[i]);
+        for (const BodyCapsule& c : ch.Capsules()) {
+            Vec3 a0, b0;
+            ch.CapsuleWorld(c, a0, b0);
+            const Vec3 ab = b0 - a0;
+            const float t = ab.Dot(ab) > 1e-9f ? std::clamp((h - a0).Dot(ab) / ab.Dot(ab), 0.f, 1.f) : 0.f;
+            worst = std::min(worst, Distance(h, a0 + ab * t) - c.radius);
+        }
+    }
+    CHECK(worst > 0.02f);   // palm (3.5 cm) stays on the surface, not inside
+
+    // Soft tissue follows through: bouncing moves breast bones relative to the chest, then settles
+    Character c2;
+    c2.Init(&a);
+    pp.motion = TestMotion::Bounce;
+    float maxLag = 0.f;
+    for (int f = 0; f < 120; ++f) {
+        pp.time = f / 60.f;
+        ApplyPosture(c2, pp);
+        const Vec3 rest = c2.BonePos(r.breast[0]);
+        c2.UpdateSoftTissue(1 / 60.f);
+        maxLag = std::max(maxLag, Distance(c2.BonePos(r.breast[0]), rest));
+    }
+    CHECK(maxLag > 0.002f && maxLag < 0.06f);
+    pp.motion = TestMotion::Idle;
+    for (int f = 0; f < 180; ++f) { pp.time = 2.f + f / 60.f; ApplyPosture(c2, pp); c2.UpdateSoftTissue(1 / 60.f); }
+    ApplyPosture(c2, pp);
+    const Vec3 rest = c2.BonePos(r.breast[0]);
+    c2.UpdateSoftTissue(1 / 60.f);
+    CHECK(Distance(c2.BonePos(r.breast[0]), rest) < 0.006f);   // settled (just gravity sag)
+}
+
 int main(int argc, char** argv) {
     const std::string content = argc > 1 ? argv[1] : EON_CONTENT_DIR;
     TestOpenBattery();
@@ -292,6 +372,7 @@ int main(int argc, char** argv) {
     TestLooseBatterySettles(content);
     TestClipPullOffAndReattach();
     TestDirectTouchLightsBulb();
+    TestCharacterImport();
     std::printf("%d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
 }

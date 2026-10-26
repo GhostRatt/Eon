@@ -21,8 +21,14 @@ build\bin\Release\eon_tests.exe
 ```
 Dependencies (raylib 5.5, Jolt Physics 5.6, nlohmann/json) download automatically.
 
+### Jenny's model
+Put the Primrose files in `content/characters/jenny/source/` (git-ignored, they stay on your PC) and point
+`content/characters/jenny/character.json` at the FBX. Until then the sim shows a stand-in rig built by
+`tools/make_test_rig.py` (run with Blender's Python). `eon_sim --fbx path/to/model.fbx` loads any FBX directly.
+
 ### Controls
 - **Sim:** RMB look, WASD/QE fly, LMB grab and carry (wheel = reach), F push with ~4 N, 1/2 switch zones, R reset, H HUD.
+  Jenny test keys: M cycle test motion (idle, bounce, walk in place, hands on chest/hips, arms crossed, turn), B bra support, C collision capsules, K skeleton.
 - **Editor:** EDIT mode — LMB select, arrows/PgUp/PgDn move, R/F rotate, N new box, Ctrl+D duplicate, Del delete, Ctrl+S save. P toggles PLAY mode (physics on, grab/push/Space to test); stopping restores the layout.
 
 ## Status
@@ -34,5 +40,7 @@ Dependencies (raylib 5.5, Jolt Physics 5.6, nlohmann/json) download automaticall
 | `engine/core` Physics/World | done — Jolt 5.6: real mass/friction, spring buttons, bistable rocker switches, rope wires with clips that latch on release and pull off past 12 N, touching terminals conduct, kinematic grab hand with grip slip |
 | `apps/sim`, `apps/editor` | operator hand (grab/carry, push); editor edit/play modes, terminal markers |
 | Editor tools | step 3 |
-| Jenny (body, IK, soft tissue) | step 4 |
+| `engine/character` | done (verified on a stand-in rig) — FBX import via ufbx (skin weights, morphs, materials, any unit/axis → meters Y-up), auto rig mapping (Mannequin/ARP/Mixamo/Blender names), auto-facing, two-bone IK, skin-fitted body capsules, limb collision, breast/glute spring-mass soft tissue with support, multithreaded CPU skinning |
+| `engine/render/CharacterRenderer` | done — textured (TGA/PNG/JPG), lamp-lit skin shading, 16-bit chunking for big meshes |
+| Jenny's real model | waiting for the Primrose FBX files (see below) |
 | Mind bridge + sensor firewall, OBS | step 5 |

@@ -1,0 +1,8 @@
+{
+  "name": "Jenny",
+  "fbx": "source/FBX/Primrose_Nude.fbx",
+  "textureDirs": ["source/Textures", "source/Assets/Textures", "source"],
+  "spawn": [0.0, 0.0, 0.3],
+  "yaw": 0,
+  "targetHeight": 0
+}

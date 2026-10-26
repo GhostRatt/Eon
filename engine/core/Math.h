@@ -101,4 +101,61 @@ struct Quat {
     }
 };
 
+// Translation-rotation-scale transform (uniform-ish scale; non-uniform is applied before rotation).
+struct Transform {
+    Vec3 t;
+    Quat r;
+    Vec3 s{1, 1, 1};
+
+    Vec3 Apply(const Vec3& p) const { return t + r.Rotate({p.x * s.x, p.y * s.y, p.z * s.z}); }
+    Transform operator*(const Transform& b) const {   // this * b  (apply b first)
+        Transform o;
+        o.r = (r * b.r).Normalized();
+        o.s = {s.x * b.s.x, s.y * b.s.y, s.z * b.s.z};
+        o.t = Apply(b.t);
+        return o;
+    }
+    Transform Inverse() const {
+        Transform o;
+        o.r = r.Conjugate();
+        o.s = {1.f / s.x, 1.f / s.y, 1.f / s.z};
+        const Vec3 it = o.r.Rotate(-t);
+        o.t = {it.x * o.s.x, it.y * o.s.y, it.z * o.s.z};
+        return o;
+    }
+};
+
+// Column-major 4x4 (m[col*4+row]), same layout as OpenGL.
+struct Mat4 {
+    float m[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+
+    static Mat4 FromTransform(const Transform& x) {
+        const Vec3 X = x.r.Rotate({x.s.x, 0, 0}), Y = x.r.Rotate({0, x.s.y, 0}), Z = x.r.Rotate({0, 0, x.s.z});
+        Mat4 o;
+        o.m[0] = X.x; o.m[1] = X.y; o.m[2] = X.z; o.m[3] = 0;
+        o.m[4] = Y.x; o.m[5] = Y.y; o.m[6] = Y.z; o.m[7] = 0;
+        o.m[8] = Z.x; o.m[9] = Z.y; o.m[10] = Z.z; o.m[11] = 0;
+        o.m[12] = x.t.x; o.m[13] = x.t.y; o.m[14] = x.t.z; o.m[15] = 1;
+        return o;
+    }
+    Mat4 operator*(const Mat4& b) const {
+        Mat4 o;
+        for (int c = 0; c < 4; ++c)
+            for (int r = 0; r < 4; ++r)
+                o.m[c * 4 + r] = m[0 * 4 + r] * b.m[c * 4 + 0] + m[1 * 4 + r] * b.m[c * 4 + 1] +
+                                 m[2 * 4 + r] * b.m[c * 4 + 2] + m[3 * 4 + r] * b.m[c * 4 + 3];
+        return o;
+    }
+    Vec3 Point(const Vec3& p) const {
+        return {m[0] * p.x + m[4] * p.y + m[8] * p.z + m[12],
+                m[1] * p.x + m[5] * p.y + m[9] * p.z + m[13],
+                m[2] * p.x + m[6] * p.y + m[10] * p.z + m[14]};
+    }
+    Vec3 Dir(const Vec3& d) const {
+        return {m[0] * d.x + m[4] * d.y + m[8] * d.z,
+                m[1] * d.x + m[5] * d.y + m[9] * d.z,
+                m[2] * d.x + m[6] * d.y + m[10] * d.z};
+    }
+};
+
 } // namespace eon

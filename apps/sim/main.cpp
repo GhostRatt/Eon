@@ -8,7 +8,16 @@
 #include "raylib.h"
 #include "raymath.h"
 
+#include <filesystem>
+#include <fstream>
+#include <memory>
+
+#include <nlohmann/json.hpp>
+
+#include "character/Character.h"
+#include "character/Posture.h"
 #include "core/World.h"
+#include "render/CharacterRenderer.h"
 #include "render/ZoneRenderer.h"
 
 using namespace eon;
@@ -25,6 +34,78 @@ void LoadOrWarn(World& w, const std::string& path, std::string& status) {
     status = w.Load(path, &err) ? "Loaded " + w.GetZone().name : "Load failed: " + err;
 }
 
+// Jenny's body. Config: content/characters/jenny/character.json (model files are not in git).
+struct Body {
+    CharacterAsset asset;
+    Character ch;
+    CharacterRenderer gfx;
+    PostureParams posture;
+    bool loaded = false, showCapsules = false, showSkeleton = false, supported = false;
+    std::string info;
+
+    void Load(const std::string& content, const std::string& fbxOverride) {
+        namespace fs = std::filesystem;
+        const fs::path cfgPath = fs::path(content) / "characters/jenny/character.json";
+        nlohmann::json cfg = nlohmann::json::object();
+        if (std::ifstream f(cfgPath); f) { try { cfg = nlohmann::json::parse(f); } catch (...) {} }
+        std::string fbx = fbxOverride;
+        std::vector<std::string> texDirs;
+        const fs::path base = cfgPath.parent_path();
+        if (fbx.empty() && cfg.contains("fbx")) fbx = (base / cfg["fbx"].get<std::string>()).string();
+        for (const auto& d : cfg.value("textureDirs", nlohmann::json::array())) texDirs.push_back((base / d.get<std::string>()).string());
+        texDirs.push_back((base / "source").string());
+        if (fbx.empty() || !fs::exists(fbx)) {
+            info = "Jenny model not found (" + (fbx.empty() ? cfgPath.string() : fbx) + "), using stand-in rig";
+            fbx = std::string(EON_CONTENT_DIR) + "/../tests/data/test_rig.fbx";
+        }
+        ImportOptions io;
+        io.targetHeight = cfg.value("targetHeight", 0.f);
+        std::string err;
+        if (!ImportFbx(fbx, asset, io, &err)) { info = "Import failed: " + err; return; }
+        if (!ch.Init(&asset)) { info = "Character init failed"; return; }
+        const auto sp = cfg.value("spawn", std::vector<float>{0.f, 0.f, 0.3f});
+        ch.placement.t = ch.placement.t + Vec3{sp[0], sp[1], sp[2]};
+        ch.placement.r = Quat::AxisAngle({0, 1, 0}, cfg.value("yaw", 0.f) * 3.14159265f / 180.f);
+        gfx.Init(ch, texDirs);
+        loaded = true;
+        if (info.empty()) info = fs::path(fbx).filename().string();
+        info += TextFormat("  |  %d bones  %d verts  %d tris  %d tex", (int)asset.bones.size(), (int)asset.VertexCount(),
+                           (int)asset.TriangleCount(), (int)gfx.LoadedTextures());
+    }
+
+    void Update(float dt) {
+        if (!loaded) return;
+        posture.time += dt;
+        ApplyPosture(ch, posture);
+        ch.UpdateLimbCollision(dt);
+        ch.SetSupport(2, supported ? 0.7f : 0.f);
+        ch.UpdateSoftTissue(dt);
+        ch.Skin();
+        gfx.Upload(ch);
+    }
+
+    void DrawDebug(const Camera3D& cam) const {
+        if (!loaded || (!showCapsules && !showSkeleton)) return;
+        BeginMode3D(cam);
+        if (showCapsules) {
+            for (const BodyCapsule& c : const_cast<Character&>(ch).Capsules()) {
+                Vec3 a, b;
+                ch.CapsuleWorld(c, a, b);
+                DrawCapsuleWires(ToRl(a), ToRl(b), c.radius, 8, 4, c.tag == 2 ? PINK : c.tag == 3 ? ORANGE : SKYBLUE);
+            }
+        }
+        if (showSkeleton) {
+            const auto& w = ch.World();
+            for (size_t i = 0; i < w.size(); ++i) {
+                const int p = asset.bones[i].parent;
+                if (p >= 0) DrawLine3D(ToRl(w[p].t), ToRl(w[i].t), YELLOW);
+                DrawSphere(ToRl(w[i].t), 0.006f, RED);
+            }
+        }
+        EndMode3D();
+    }
+};
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -33,7 +114,10 @@ int main(int argc, char** argv) {
     const std::string test01 = content + "/zones/test_zone_01.json";
 
     // Args: [zone.json] [--shot out.png] [--power] [--lights-off] [--settle s] [--cam x y z tx ty tz]
-    std::string zonePath = waiting, shotPath;
+    //       [--fbx model.fbx] [--motion 0-6] [--capsules] [--skeleton]
+    std::string zonePath = waiting, shotPath, fbxOverride;
+    int motionArg = 0;
+    bool capsArg = false, skelArg = false;
     bool powerAll = false, lightsOff = false, customCam = false;
     float settle = 0.f;
     float cam[6] = {0, 1.6f, 1.8f, 0, 0.9f, 0};
@@ -43,6 +127,10 @@ int main(int argc, char** argv) {
         else if (arg == "--settle" && a + 1 < argc) settle = std::stof(argv[++a]);
         else if (arg == "--power") powerAll = true;
         else if (arg == "--lights-off") lightsOff = true;
+        else if (arg == "--fbx" && a + 1 < argc) fbxOverride = argv[++a];
+        else if (arg == "--motion" && a + 1 < argc) motionArg = std::stoi(argv[++a]);
+        else if (arg == "--capsules") capsArg = true;
+        else if (arg == "--skeleton") skelArg = true;
         else if (arg == "--cam" && a + 6 < argc) { for (float& c : cam) c = std::stof(argv[++a]); customCam = true; }
         else zonePath = arg;
     }
@@ -67,7 +155,15 @@ int main(int argc, char** argv) {
         for (const Entity& e : world.GetZone().entities)
             if (e.type == "switch") world.DebugActuate(e.id, false);
     }
-    if (settle > 0.f) world.Advance(settle);
+    auto body = std::make_unique<Body>();
+    body->Load(content, fbxOverride);
+    body->posture.motion = static_cast<TestMotion>(std::clamp(motionArg, 0, 6));
+    body->showCapsules = capsArg;
+    body->showSkeleton = skelArg;
+    if (settle > 0.f) {
+        world.Advance(settle);
+        for (float t = 0; t < settle; t += 1 / 60.f) body->Update(1 / 60.f);
+    }
 
     FlyCamera fly;
     fly.Init({cam[0], cam[1], cam[2]}, {cam[3], cam[4], cam[5]});
@@ -87,6 +183,10 @@ int main(int argc, char** argv) {
         if (IsKeyPressed(KEY_TWO)) LoadOrWarn(world, test01, status);
         if (IsKeyPressed(KEY_R)) { world.Reset(); status = "Reset " + world.GetZone().name; }
         if (IsKeyPressed(KEY_H)) showHud = !showHud;
+        if (IsKeyPressed(KEY_M)) body->posture.motion = static_cast<TestMotion>((static_cast<int>(body->posture.motion) + 1) % 7);
+        if (IsKeyPressed(KEY_B)) body->supported = !body->supported;
+        if (IsKeyPressed(KEY_C)) body->showCapsules = !body->showCapsules;
+        if (IsKeyPressed(KEY_K)) body->showSkeleton = !body->showSkeleton;
 
         // Stand-in hand: LMB grab and carry, wheel = reach, F = push with a fingertip (~4 N).
         const Ray ray = GetScreenToWorldRay(GetMousePosition(), fly.cam);
@@ -107,17 +207,23 @@ int main(int argc, char** argv) {
 
         world.Tick(dt);
         world.BuildRenderFrame(frame);
+        body->Update(dt);
 
         BeginDrawing();
         ClearBackground({8, 8, 10, 255});
         renderer.Draw(frame, fly.cam, showHud && hasHit ? hit.entity : -1);
+        if (body->loaded) body->gfx.Draw(frame, fly.cam, renderer.ambient);
+        body->DrawDebug(fly.cam);
 
         if (showHud) {
             BeginMode3D(fly.cam);
             if (world.GrabbedBody() >= 0) DrawSphere(ToRl(world.GrabPoint()), 0.006f, ORANGE);
             EndMode3D();
 
-            DrawRectangle(8, 8, 600, 128, Fade(BLACK, 0.6f));
+            DrawRectangle(8, 8, 600, 176, Fade(BLACK, 0.6f));
+            DrawText(TextFormat("Jenny: %s", body->info.c_str()), 16, 130, 14, PINK);
+            DrawText(TextFormat("M motion [%s]  B support [%s]  C capsules  K skeleton", MotionName(body->posture.motion),
+                                body->supported ? "on" : "off"), 16, 150, 16, LIGHTGRAY);
             DrawText("OPERATOR VIEW (Jenny never sees this)", 16, 14, 18, ORANGE);
             DrawText(TextFormat("%s   t = %.1fs   %d fps", world.GetZone().name.c_str(), world.SimTime(), GetFPS()), 16, 38, 18, RAYWHITE);
             DrawText("1 Waiting Area  2 Test Zone 01  R reset  H hud", 16, 62, 16, LIGHTGRAY);

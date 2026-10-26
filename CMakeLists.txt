@@ -38,6 +38,17 @@ FetchContent_Declare(JoltPhysics
     SOURCE_SUBDIR Build)
 FetchContent_MakeAvailable(JoltPhysics)
 
+FetchContent_Declare(ufbx
+    GIT_REPOSITORY https://github.com/ufbx/ufbx.git
+    GIT_TAG v0.23.1
+    GIT_SHALLOW TRUE)
+FetchContent_GetProperties(ufbx)
+if(NOT ufbx_POPULATED)
+    FetchContent_Populate(ufbx)
+endif()
+add_library(ufbx STATIC ${ufbx_SOURCE_DIR}/ufbx.c)
+target_include_directories(ufbx PUBLIC ${ufbx_SOURCE_DIR})
+
 # ---- Core: no graphics, fully testable ----
 add_library(eon_core STATIC
     engine/core/Circuit.cpp
@@ -53,19 +64,32 @@ else()
     target_compile_options(eon_core PRIVATE -Wall -Wextra)
 endif()
 
+# ---- Character: FBX import, skeleton, IK, soft tissue, limb collision, skinning ----
+add_library(eon_character STATIC
+    engine/character/FbxImport.cpp
+    engine/character/Character.cpp
+    engine/character/Posture.cpp)
+target_include_directories(eon_character PUBLIC engine)
+target_link_libraries(eon_character PUBLIC eon_core PRIVATE ufbx)
+find_package(Threads REQUIRED)
+target_link_libraries(eon_character PUBLIC Threads::Threads)
+
 # ---- Apps ----
 if(EON_BUILD_APPS)
     set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(BUILD_GAMES OFF CACHE BOOL "" FORCE)
     set(OPENGL_VERSION "4.3" CACHE STRING "" FORCE)
+    set(CUSTOMIZE_BUILD ON CACHE BOOL "" FORCE)
+    set(SUPPORT_FILEFORMAT_TGA ON CACHE BOOL "" FORCE)   # Primrose textures are .tga
+    set(SUPPORT_FILEFORMAT_JPG ON CACHE BOOL "" FORCE)
     FetchContent_Declare(raylib
         GIT_REPOSITORY https://github.com/raysan5/raylib.git
         GIT_TAG 5.5
         GIT_SHALLOW TRUE)
     FetchContent_MakeAvailable(raylib)
 
-    add_library(eon_render STATIC engine/render/ZoneRenderer.cpp)
-    target_link_libraries(eon_render PUBLIC eon_core raylib)
+    add_library(eon_render STATIC engine/render/ZoneRenderer.cpp engine/render/CharacterRenderer.cpp)
+    target_link_libraries(eon_render PUBLIC eon_core eon_character raylib)
 
     add_executable(eon_sim apps/sim/main.cpp)
     target_link_libraries(eon_sim PRIVATE eon_render)
@@ -78,6 +102,7 @@ endif()
 if(EON_BUILD_TESTS)
     enable_testing()
     add_executable(eon_tests tests/test_main.cpp)
-    target_link_libraries(eon_tests PRIVATE eon_core)
+    target_link_libraries(eon_tests PRIVATE eon_core eon_character)
+    target_compile_definitions(eon_tests PRIVATE EON_TEST_DATA="${CMAKE_SOURCE_DIR}/tests/data")
     add_test(NAME eon_tests COMMAND eon_tests ${CMAKE_SOURCE_DIR}/content)
 endif()

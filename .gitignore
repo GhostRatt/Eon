@@ -17,3 +17,7 @@ __pycache__/
 brain/.venv/
 brain/memory.db
 *.gguf
+build/
+build-*/
+out/
+/*.png

@@ -1,21 +1,34 @@
 # Eon
 
-UE 5.8 AI-agent sim: Jenny, an AI who believes she is human, wakes in an unknown, growing world. Her body, needs and discoveries are simulated and logged; a drone camera streams her to OBS.
+A custom engine for one AI agent. Jenny, who believes she is human, lives in a **Waiting Area** and is sent into **Test Zones** full of real-world things (batteries, wires, buttons, lamps, motors). She knows nothing about the engine: she sees, touches and experiments to figure everything out. Realism big, graphics small.
 
-## Modules
-| Folder | Status | Purpose |
-|---|---|---|
-| Source/Eon/Body | done | Core temp, sweat, shiver, needs, mood |
-| Source/Eon/Log | done | JSONL research log in Saved/Eon/Logs |
-| Source/Eon/Anim + EonAnimEditor | done | Limb collision (two-bone IK pushout), soft tissue springs, collider sets |
-| Wardrobe / Censor | planned | Physical dress/undress, stream mode |
-| Mind + brain/ | planned | Local VLM sidecar, memory |
-| World / Drone | planned | PCG world, camera director, OBS out |
+Design: [`Docs/Engine_Design.md`](Docs/Engine_Design.md). The old Unreal Engine 5.8 version lives on the `ue5` branch.
 
-## Setup
-1. Right-click `Eon.uproject` → Generate Visual Studio project files.
-2. Build `EonEditor` (Development Editor) and open the project.
-3. Follow `Docs/Step2_Primrose_Pipeline.md` for the character.
-4. Add `EonBody` to the character BP; skin material needs a scalar `Wetness`.
+## Programs
+| Program | Purpose |
+|---|---|
+| `eon_sim` | Runs Jenny's world (Waiting Area + Test Zones) |
+| `eon_editor` | Kelvin's tools: build and edit zones |
+| `eon_tests` | Core tests (electricity, zone files) |
 
-Large assets use Git LFS (`git lfs install`).
+## Build (Windows 11, Visual Studio 2022 + CMake)
+```
+cmake -S . -B build
+cmake --build build --config Release
+build\bin\Release\eon_sim.exe
+build\bin\Release\eon_editor.exe
+build\bin\Release\eon_tests.exe
+```
+Dependencies (raylib 5.5, nlohmann/json) download automatically.
+
+## Status
+| Module | Status |
+|---|---|
+| `engine/core` Circuit | done — nodal solver: batteries (drain, sag, internal resistance), wires, switches, buttons, lamps, motors |
+| `engine/core` Zone/World | done — JSON zones, fixed 120 Hz sim |
+| `engine/render` | done — lamp-lit renderer, picking, fly camera |
+| `apps/sim`, `apps/editor` | step 1 shells |
+| Physics (Jolt), physical buttons, rope wires | step 2 |
+| Editor tools | step 3 |
+| Jenny (body, IK, soft tissue) | step 4 |
+| Mind bridge + sensor firewall, OBS | step 5 |

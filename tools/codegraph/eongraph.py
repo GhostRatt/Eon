@@ -1126,6 +1126,37 @@ def cmd_diff(G_, rev="HEAD"):
     emit("\n".join(out) if touched else f"no changes since {rev}")
 
 
+def cmd_html(G_, out_path):
+    """The visual: a layer-ordered file map + symbol neighbourhoods, self-contained (data embedded)."""
+    import datetime
+    files = sorted(f for f in G_.g["files"] if f.endswith(tuple(CPP_EXT | {".py"})))
+    fidx = {f: i for i, f in enumerate(files)}
+    keep = [sy for sy in G_.syms if sy["file"] in fidx and sy["kind"] in ("function", "method", "class", "struct", "enum")
+            and not sy.get("decl") and not (sy["kind"] == "method" and sy["end"] == sy["line"] and sy["qual"] in G_.defined)]
+    sidx = {sy["id"]: i for i, sy in enumerate(keep)}
+    syms = [[sy["qual"], sy["name"], sy["kind"], fidx[sy["file"]], sy["line"], sy["end"], compact_sig(sy), sy.get("doc", "")[:220]] for sy in keep]
+    calls = [[sidx[e[0]], sidx[e[1]], 1 if e[3] == "ambiguous" else 0] for e in G_.g["edges"] if e[2] == "calls" and e[0] in sidx and e[1] in sidx]
+    finfo = [[f, G_.g["files"][f]["lines"], G_.g["files"][f].get("summary", "")[:200]] for f in files]
+    deg = defaultdict(int)
+    for a, b, _ in calls:
+        deg[a] += 1
+        deg[b] += 1
+    start = max(range(len(syms)), key=lambda i: deg[i]) if syms else 0
+    fdeg = defaultdict(int)
+    for a, b, _ in calls:
+        if syms[a][3] != syms[b][3]:
+            fdeg[syms[a][3]] += 1
+            fdeg[syms[b][3]] += 1
+    data = {"files": finfo, "syms": syms, "calls": calls, "notes": G_.notes, "start": start,
+            "startFile": max(fdeg, key=fdeg.get) if fdeg else 0, "built": datetime.date.today().isoformat()}
+    tpl = open(os.path.join(os.path.dirname(__file__), "atlas_template.html"), encoding="utf-8").read()
+    html = tpl.replace("/*DATA*/null", json.dumps(data, separators=(",", ":")).replace("</", "<\\/"))
+    out = out_path if os.path.isabs(out_path) else os.path.join(ROOT, out_path)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    open(out, "w", encoding="utf-8").write(html)
+    print(f"{os.path.relpath(out, ROOT)}: {len(files)} files, {len(syms)} symbols, {len(calls)} calls ({len(html) // 1024} KB)")
+
+
 def cmd_changed(G_):
     out = []
     for f in source_files():
@@ -1256,6 +1287,8 @@ def dispatch(G_, cmd, args, budget):
         cmd_path(G_, args[0], args[1])
     elif cmd == "context":
         cmd_context(G_, " ".join(args), budget or 700)
+    elif cmd == "html":
+        cmd_html(G_, args[0] if args else "out/eon_codegraph.html")
     elif cmd == "eval":
         cmd_eval(G_)
     elif cmd == "changed":

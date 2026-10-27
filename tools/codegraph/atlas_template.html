@@ -1,0 +1,292 @@
+<title>Eon Code Atlas</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a layer-ordered map of the engine (core -> character -> mind -> render -> apps/tests/tools) beside a detail rail; stacks on phones */
+:root {
+  --bg: #eef1f0; --panel: #f8faf9; --fg: #17201e; --mut: #5b6865; --line: #c7d0cd; --hi: #0f6f63;
+  --l-core: #2f6db3; --l-character: #b8467a; --l-mind: #7a54c2; --l-render: #c27a1e; --l-apps: #2f8f5b; --l-tests: #7a7f86; --l-tools: #4f8a99; --l-content: #a35a3c; --l-docs: #8d8a3d;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --body: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121817; --panel: #18201f; --fg: #e3ebe8; --mut: #93a29e; --line: #2e3a38; --hi: #4fc2b0;
+  --l-core: #6aa2e6; --l-character: #e07aa8; --l-mind: #a98cf0; --l-render: #e3a457; --l-apps: #5fc28c; --l-tests: #a3a8ae; --l-tools: #7bbccc; --l-content: #d48a68; --l-docs: #c3bf62; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #121817; --panel: #18201f; --fg: #e3ebe8; --mut: #93a29e; --line: #2e3a38; --hi: #4fc2b0;
+  --l-core: #6aa2e6; --l-character: #e07aa8; --l-mind: #a98cf0; --l-render: #e3a457; --l-apps: #5fc28c; --l-tests: #a3a8ae; --l-tools: #7bbccc; --l-content: #d48a68; --l-docs: #c3bf62; color-scheme: dark }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--body); }
+.wrap { height: 100%; display: grid; grid-template-rows: auto 1fr; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 12px; gap: 10px; box-sizing: border-box; }
+header { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: baseline; }
+h1 { font: 700 22px/1.1 var(--display); margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+.stats { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--mut); font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+.stats b { color: var(--fg); font-weight: 500; }
+.tools { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+input[type=search] { font: 13px var(--mono); padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--fg); width: min(260px, 70vw); }
+input[type=search]:focus-visible, button:focus-visible, .row:focus-visible { outline: 2px solid var(--hi); outline-offset: 1px; }
+button { font: 500 12px var(--body); padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--fg); cursor: pointer; }
+button[aria-pressed=true] { border-color: var(--hi); color: var(--hi); }
+main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 400px); gap: 12px; min-height: 0; }
+.stage { position: relative; min-height: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); overflow: hidden; }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.legend { position: absolute; left: 10px; bottom: 8px; display: flex; flex-wrap: wrap; gap: 4px 10px; font: 11px var(--mono); color: var(--mut); pointer-events: none; }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+.hint { position: absolute; right: 10px; top: 8px; font: 11px var(--body); color: var(--mut); pointer-events: none; }
+aside { min-height: 0; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 14px 14px 18px; }
+aside h2 { font: 700 17px/1.2 var(--display); margin: 0 0 2px; word-break: break-word; }
+.kicker { font: 500 11px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--mut); }
+.loc { font: 12px var(--mono); color: var(--mut); word-break: break-all; }
+.sig { font: 12px/1.5 var(--mono); background: var(--bg); border-radius: 6px; padding: 8px 10px; margin: 8px 0; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+.doc { margin: 6px 0; color: var(--fg); max-width: 62ch; }
+.note { margin: 6px 0; padding: 6px 10px; border-left: 3px solid var(--hi); background: var(--bg); font-size: 13px; }
+h3 { font: 600 12px var(--body); letter-spacing: 0.05em; text-transform: uppercase; color: var(--mut); margin: 14px 0 4px; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 3px 6px; border-radius: 4px; cursor: pointer; font: 12.5px var(--mono); }
+.row:hover { background: var(--bg); }
+.row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row span:last-child { color: var(--mut); font-variant-numeric: tabular-nums; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.cmd { font: 12px var(--mono); color: var(--hi); }
+.empty { color: var(--mut); }
+@media (max-width: 760px) {
+  main { grid-template-columns: 1fr; grid-template-rows: 58vh auto; }
+  .wrap { height: auto; }
+  aside { overflow: visible; }
+}
+@media (prefers-reduced-motion: reduce) { canvas { scroll-behavior: auto; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Eon Code Atlas</h1>
+    <div class="stats" id="stats"></div>
+    <div class="tools">
+      <input type="search" id="q" placeholder="find a function, class, file…" aria-label="Search symbols">
+      <button id="viewFiles" aria-pressed="true">Files</button>
+      <button id="viewSym" aria-pressed="false">Symbol</button>
+    </div>
+  </header>
+  <main>
+    <div class="stage">
+      <canvas id="cv" aria-label="Code graph"></canvas>
+      <div class="legend" id="legend"></div>
+      <div class="hint" id="hint">Drag to pan · wheel to zoom · click a file</div>
+    </div>
+    <aside id="side"></aside>
+  </main>
+</div>
+
+<script>
+const D = /*DATA*/null;
+const LAYERS = ["core", "character", "mind", "render", "apps", "tests", "tools", "content", "docs"];
+let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const layerOf = f => f.startsWith("engine/core") ? "core" : f.startsWith("engine/character") ? "character" : f.startsWith("engine/mind") ? "mind"
+  : f.startsWith("engine/render") ? "render" : f.startsWith("apps") ? "apps" : f.startsWith("tests") ? "tests" : f.startsWith("tools") ? "tools"
+  : f.startsWith("content") ? "content" : "docs";
+const colorOf = l => css("--l-" + l) || "#888";
+
+// ---- data
+const S = D.syms;                     // [qual, name, kind, fileIdx, line, end, sig, doc]
+const F = D.files;                    // [path, lines, summary]
+const callers = S.map(() => []), callees = S.map(() => []);
+for (const [a, b, amb] of D.calls) { callees[a].push([b, amb]); callers[b].push([a, amb]); }
+const symsOfFile = F.map(() => []);
+S.forEach((s, i) => symsOfFile[s[3]].push(i));
+const fileLinks = new Map();
+for (const [a, b] of D.calls) { const fa = S[a][3], fb = S[b][3]; if (fa === fb) continue; const k = fa < fb ? fa + "," + fb : fb + "," + fa; fileLinks.set(k, (fileLinks.get(k) || 0) + 1); }
+const totalLines = F.reduce((t, f) => t + f[1], 0);
+document.getElementById("stats").innerHTML =
+  `<span><b>${F.length}</b> files</span><span><b>${totalLines.toLocaleString()}</b> lines</span><span><b>${S.length}</b> symbols</span>` +
+  `<span><b>${D.calls.length.toLocaleString()}</b> calls</span><span>whole repo ≈ <b>${Math.round(totalLines * 2.5).toLocaleString()}</b> tokens</span>` +
+  `<span>indexed <b>${D.built}</b></span>`;
+document.getElementById("legend").innerHTML = LAYERS.filter(l => F.some(f => layerOf(f[0]) === l))
+  .map(l => `<span><i style="background:${colorOf(l)}"></i>${l}</span>`).join("");
+
+// ---- canvas + camera
+const cv = document.getElementById("cv"), cx = cv.getContext("2d");
+let W = 0, H = 0, dpr = 1, cam = { x: 0, y: 0, k: 1 };
+let fitted = false;
+function resize() { dpr = devicePixelRatio || 1; W = cv.clientWidth; H = cv.clientHeight; cv.width = W * dpr; cv.height = H * dpr; if (!fitted) fit(); else draw(); }
+new ResizeObserver(resize).observe(cv);
+const toWorld = (px, py) => [(px - W / 2) / cam.k + cam.x, (py - H / 2) / cam.k + cam.y];
+
+// ---- file map: each layer has a home column (dependency order), files settle inside it
+let view = "files", nodes = [], links = [], sel = null, selSym = null, hover = null;
+function buildFiles() {
+  const present = LAYERS.filter(l => F.some(f => layerOf(f[0]) === l));
+  nodes = F.map((f, i) => {
+    const l = layerOf(f[0]), col = present.indexOf(l);
+    return { i, kind: "file", label: f[0].split("/").pop(), layer: l, r: 4 + Math.sqrt(f[1]) * 0.42, hx: (col - (present.length - 1) / 2) * 240,
+             x: (col - (present.length - 1) / 2) * 240 + (rnd() - 0.5) * 60, y: (rnd() - 0.5) * 300, vx: 0, vy: 0 };
+  });
+  links = [...fileLinks].map(([k, w]) => { const [a, b] = k.split(",").map(Number); return { a: nodes[a], b: nodes[b], w }; });
+  settle(320);
+  fit();
+}
+// ---- symbol neighbourhood: callers left, the symbol centre, callees right
+function buildSym(i) {
+  const ins = [...new Set(callers[i].map(c => c[0]))].slice(0, 24), outs = [...new Set(callees[i].map(c => c[0]))].filter(j => j !== i).slice(0, 24);
+  const mk = (j, x, y, role) => ({ i: j, kind: "sym", role, label: S[j][0], layer: layerOf(F[S[j][3]][0]), r: role === "self" ? 9 : 5.5, x, y, hx: x, vx: 0, vy: 0 });
+  nodes = [mk(i, 0, 0, "self")];
+  ins.forEach((j, k) => nodes.push(mk(j, -260, (k - (ins.length - 1) / 2) * 26, "in")));
+  outs.forEach((j, k) => nodes.push(mk(j, 260, (k - (outs.length - 1) / 2) * 26, "out")));
+  links = nodes.slice(1).map(n => ({ a: n.role === "in" ? n : nodes[0], b: n.role === "in" ? nodes[0] : n, w: 1 }));
+  fit();
+}
+function settle(steps) {
+  for (let s = 0; s < steps; s++) {
+    for (const a of nodes) for (const b of nodes) {
+      if (a === b) continue;
+      const dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy + 1, min = a.r + b.r + 6;
+      const f = d2 < min * min * 4 ? 140 / d2 : 0;
+      a.vx += dx * f; a.vy += dy * f;
+    }
+    for (const l of links) {
+      const dx = l.b.x - l.a.x, dy = l.b.y - l.a.y, d = Math.hypot(dx, dy) || 1, f = (d - 70) * 0.0009 * Math.min(4, l.w);
+      l.a.vx += dx / d * f; l.a.vy += dy / d * f; l.b.vx -= dx / d * f; l.b.vy -= dy / d * f;
+    }
+    for (const n of nodes) { n.vx += (n.hx - n.x) * (view === "files" ? 0.06 : 0.02); n.vy += -n.y * 0.003; n.vx *= 0.8; n.vy *= 0.8; n.x += n.vx; n.y += n.vy; }
+  }
+}
+function fit() {
+  if (!nodes.length || !W) return;
+  fitted = true;
+  let a = 1e9, b = 1e9, c = -1e9, d = -1e9;
+  for (const n of nodes) { a = Math.min(a, n.x - n.r); b = Math.min(b, n.y - n.r); c = Math.max(c, n.x + n.r); d = Math.max(d, n.y + n.r); }
+  const pad = view === "sym" ? 220 : 70;
+  cam = { x: (a + c) / 2, y: (b + d) / 2, k: Math.min((W - 40) / Math.max(1, c - a + pad), (H - 50) / Math.max(1, d - b + 40), 2.2) };
+  draw();
+}
+
+function draw() {
+  if (!W) return;
+  cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cx.clearRect(0, 0, W, H);
+  cx.save();
+  cx.translate(W / 2, H / 2); cx.scale(cam.k, cam.k); cx.translate(-cam.x, -cam.y);
+  const line = css("--line"), fg = css("--fg"), mut = css("--mut"), hi = css("--hi");
+  const focus = sel != null && view === "files" ? new Set([sel, ...links.filter(l => l.a.i === sel || l.b.i === sel).flatMap(l => [l.a.i, l.b.i])]) : null;
+  for (const l of links) {
+    const on = focus && (l.a.i === sel || l.b.i === sel);
+    cx.strokeStyle = on ? hi : line; cx.globalAlpha = focus && !on ? 0.15 : on ? 0.9 : 0.55;
+    cx.lineWidth = Math.min(4, 0.6 + Math.log2(1 + l.w) * 0.6) / Math.sqrt(cam.k);
+    cx.beginPath(); cx.moveTo(l.a.x, l.a.y);
+    if (view === "sym") { const mx = (l.a.x + l.b.x) / 2; cx.bezierCurveTo(mx, l.a.y, mx, l.b.y, l.b.x, l.b.y); } else cx.lineTo(l.b.x, l.b.y);
+    cx.stroke();
+  }
+  cx.globalAlpha = 1;
+  const fs = 11 / Math.max(0.6, cam.k);
+  cx.font = `${fs}px ${css("--mono")}`;
+  for (const n of nodes) {
+    const dim = focus && !focus.has(n.i);
+    cx.globalAlpha = dim ? 0.25 : 1;
+    cx.fillStyle = colorOf(n.layer);
+    cx.beginPath(); cx.arc(n.x, n.y, n.r, 0, Math.PI * 2); cx.fill();
+    if ((view === "files" && n.i === sel) || (view === "sym" && n.role === "self") || n === hover) { cx.lineWidth = 2 / cam.k; cx.strokeStyle = fg; cx.stroke(); }
+    const showLabel = view === "sym" || n.r * cam.k > 7 || n.i === sel || n === hover || (focus && focus.has(n.i));
+    if (showLabel) {
+      cx.fillStyle = dim ? mut : fg;
+      const t = view === "sym" ? n.label : n.label;
+      if (view === "sym" && n.role === "in") { cx.textAlign = "right"; cx.fillText(t, n.x - n.r - 4, n.y + fs * 0.35); }
+      else { cx.textAlign = "left"; cx.fillText(t, n.x + n.r + 4, n.y + fs * 0.35); }
+    }
+  }
+  if (view === "files") {
+    // layer columns: the engine's dependency order, left to right
+    cx.globalAlpha = 1; cx.textAlign = "center"; cx.font = `600 ${fs * 1.05}px ${css("--body")}`;
+    const cols = {};
+    for (const n of nodes) { (cols[n.layer] = cols[n.layer] || []).push(n); }
+    for (const [l, ns] of Object.entries(cols)) {
+      const top = Math.min(...ns.map(n => n.y - n.r));
+      cx.fillStyle = colorOf(l); cx.fillText(l.toUpperCase(), ns[0].hx, top - 14 / cam.k);
+    }
+  }
+  if (view === "sym") {
+    cx.globalAlpha = 1; cx.fillStyle = mut; cx.textAlign = "center"; cx.font = `600 ${fs}px ${css("--body")}`;
+    cx.fillText("CALLED BY", -260, -Math.max(60, nodes.filter(n => n.role === "in").length * 13 + 24));
+    cx.fillText("CALLS", 260, -Math.max(60, nodes.filter(n => n.role === "out").length * 13 + 24));
+  }
+  cx.restore();
+}
+
+// ---- interaction
+let drag = null;
+cv.addEventListener("pointerdown", e => { drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false }; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener("pointermove", e => {
+  const r = cv.getBoundingClientRect();
+  if (drag) { const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; cam.x = drag.cx - dx / cam.k; cam.y = drag.cy - dy / cam.k; draw(); return; }
+  const h = pick(e.clientX - r.left, e.clientY - r.top); if (h !== hover) { hover = h; draw(); }
+});
+cv.addEventListener("pointerup", e => {
+  const r = cv.getBoundingClientRect(), was = drag; drag = null;
+  if (was && was.moved) return;
+  const n = pick(e.clientX - r.left, e.clientY - r.top);
+  if (!n) return;
+  if (n.kind === "file") { sel = n.i; showFile(n.i); draw(); } else openSym(n.i);
+});
+cv.addEventListener("wheel", e => { e.preventDefault(); const r = cv.getBoundingClientRect(); const [wx, wy] = toWorld(e.clientX - r.left, e.clientY - r.top);
+  const k2 = Math.min(6, Math.max(0.2, cam.k * Math.exp(-e.deltaY * 0.0015))); cam.x = wx - (wx - cam.x) * cam.k / k2; cam.y = wy - (wy - cam.y) * cam.k / k2; cam.k = k2; draw(); }, { passive: false });
+function pick(px, py) { const [x, y] = toWorld(px, py); let best = null, bd = 1e9; for (const n of nodes) { const d = Math.hypot(n.x - x, n.y - y); if (d < Math.max(n.r, 8 / cam.k) && d < bd) { bd = d; best = n; } } return best; }
+
+// ---- side panel
+const side = document.getElementById("side");
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function symRows(list) {
+  if (!list.length) return `<div class="empty">none</div>`;
+  return list.map(j => `<div class="row" tabindex="0" data-sym="${j}"><span><i class="dot" style="background:${colorOf(layerOf(F[S[j][3]][0]))}"></i>${esc(S[j][0])}</span><span>${S[j][4]}</span></div>`).join("");
+}
+function wire() { side.querySelectorAll("[data-sym]").forEach(el => { const go = () => openSym(+el.dataset.sym); el.onclick = go; el.onkeydown = e => { if (e.key === "Enter") go(); }; });
+  side.querySelectorAll("[data-file]").forEach(el => { const go = () => { setView("files"); sel = +el.dataset.file; showFile(sel); draw(); }; el.onclick = go; el.onkeydown = e => { if (e.key === "Enter") go(); }; }); }
+function showFile(fi) {
+  const f = F[fi], syms = symsOfFile[fi].slice().sort((a, b) => S[a][4] - S[b][4]);
+  const neigh = [...fileLinks].filter(([k]) => k.split(",").map(Number).includes(fi)).map(([k, w]) => [k.split(",").map(Number).find(x => x !== fi), w]).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  side.innerHTML = `<div class="kicker">${layerOf(f[0])} · file</div><h2>${esc(f[0].split("/").pop())}</h2><div class="loc">${esc(f[0])} · ${f[1]} lines</div>` +
+    (f[2] ? `<p class="doc">${esc(f[2])}</p>` : "") +
+    `<div class="sig cmd">eongraph file ${esc(f[0])}</div>` +
+    `<h3>Talks most with</h3>` + (neigh.length ? neigh.map(([j, w]) => `<div class="row" tabindex="0" data-file="${j}"><span><i class="dot" style="background:${colorOf(layerOf(F[j][0]))}"></i>${esc(F[j][0])}</span><span>${w} calls</span></div>`).join("") : `<div class="empty">no cross-file calls</div>`) +
+    `<h3>Symbols (${syms.length})</h3>` + symRows(syms);
+  wire();
+}
+function openSym(i) {
+  selSym = i; setView("sym", true); buildSym(i);
+  const s = S[i], ins = [...new Set(callers[i].map(c => c[0]))], outs = [...new Set(callees[i].map(c => c[0]))].filter(j => j !== i);
+  const notes = D.notes[s[0]] || [];
+  side.innerHTML = `<div class="kicker">${layerOf(F[s[3]][0])} · ${esc(s[2])}</div><h2>${esc(s[0])}</h2>` +
+    `<div class="loc"><span class="row" style="display:inline;padding:0" tabindex="0" data-file="${s[3]}">${esc(F[s[3]][0])}</span>:${s[4]}${s[5] > s[4] ? "–" + s[5] : ""}</div>` +
+    `<div class="sig">${esc(s[6])}</div>` + (s[7] ? `<p class="doc">${esc(s[7])}</p>` : "") +
+    notes.map(n => `<div class="note">${esc(n)}</div>`).join("") +
+    `<div class="sig cmd">eongraph q "brief ${esc(s[0])}" "show ${esc(s[0])}"</div>` +
+    `<h3>Called by (${ins.length})</h3>` + symRows(ins) + `<h3>Calls (${outs.length})</h3>` + symRows(outs);
+  wire();
+}
+function setView(v, keep) {
+  view = v;
+  document.getElementById("viewFiles").setAttribute("aria-pressed", v === "files");
+  document.getElementById("viewSym").setAttribute("aria-pressed", v === "sym");
+  document.getElementById("hint").textContent = v === "files" ? "Drag to pan · wheel to zoom · click a file" : "Click a caller or callee to walk the graph";
+  if (v === "files" && !keep) { fitted = false; buildFiles(); }
+  if (v === "sym" && !keep && selSym != null) buildSym(selSym);
+}
+document.getElementById("viewFiles").onclick = () => { setView("files"); if (sel != null) showFile(sel); };
+document.getElementById("viewSym").onclick = () => { if (selSym == null) selSym = D.start; openSym(selSym); };
+
+// ---- search
+const q = document.getElementById("q");
+q.addEventListener("keydown", e => {
+  if (e.key !== "Enter") return;
+  const t = q.value.trim().toLowerCase(); if (!t) return;
+  const exact = S.findIndex(s => s[0].toLowerCase() === t || s[1].toLowerCase() === t);
+  const sym = exact >= 0 ? exact : S.findIndex(s => s[0].toLowerCase().includes(t));
+  const fi = F.findIndex(f => f[0].toLowerCase().includes(t));
+  if (sym >= 0) openSym(sym); else if (fi >= 0) { setView("files"); sel = fi; showFile(fi); draw(); }
+  else side.innerHTML = `<div class="empty">Nothing named “${esc(q.value)}”. Try part of a name, like <span class="cmd">Climb</span> or <span class="cmd">Motor.cpp</span>.</div>`;
+});
+
+// ---- start: the file map, with the busiest file open
+buildFiles();
+sel = D.startFile; showFile(sel);
+resize();
+</script>

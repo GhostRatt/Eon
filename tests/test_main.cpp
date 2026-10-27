@@ -1,3 +1,4 @@
+#include <chrono>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -21,12 +22,13 @@ using namespace eon;
 
 static int g_fail = 0, g_pass = 0;
 
+static const char* g_test = "";
 #define CHECK_NEAR(a, b, tol) do { \
     const double _a = (a), _b = (b); \
-    if (std::abs(_a - _b) > (tol)) { std::printf("FAIL %s:%d  %s = %.6f, expected %.6f\n", __FILE__, __LINE__, #a, _a, _b); ++g_fail; } \
+    if (std::abs(_a - _b) > (tol)) { std::printf("FAIL [%s] %s:%d  %s = %.6f, expected %.6f\n", g_test, __FILE__, __LINE__, #a, _a, _b); ++g_fail; } \
     else ++g_pass; } while (0)
 
-#define CHECK(c) do { if (!(c)) { std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); ++g_fail; } else ++g_pass; } while (0)
+#define CHECK(c) do { if (!(c)) { std::printf("FAIL [%s] %s:%d  %s\n", g_test, __FILE__, __LINE__, #c); ++g_fail; } else ++g_pass; } while (0)
 
 static Part Battery(double v, double r, double ah = 0.0) {
     Part p; p.kind = PartKind::Battery; p.voltage = v; p.internalR = r; p.capacityAh = ah; p.chargeAh = ah; return p;
@@ -955,38 +957,53 @@ static void TestSleep() {
 }
 
 int main(int argc, char** argv) {
-    const std::string content = argc > 1 ? argv[1] : EON_CONTENT_DIR;
-    TestOpenBattery();
-    TestSimpleLoop();
-    TestSwitchAndLamp();
-    TestUnconnectedWireDoesNothing();
-    TestParallel();
-    TestShortCircuit();
-    TestBatteryDrains();
-    TestMotor();
-    TestZoneRoundTrip(content);
-    TestHingeAndSliderBasics();
-    TestWaitingAreaLight(content);
-    TestTestZoneButton(content);
-    TestLooseBatterySettles(content);
-    TestClipPullOffAndReattach();
-    TestDirectTouchLightsBulb();
-    TestCharacterImport();
-    TestBodyState();
-    TestWardrobeRules();
-    TestMotorPressesButton(content);
-    TestMotorWalksAndStopsAtWall(content);
-    TestMotorGripsAndLifts(content);
-    TestMemoryGraph();
-    TestJennyLearnsTheButton(content);
-    TestFlipsWallSwitch(content);
-    TestPullsLever(content);
-    TestCarriesThings(content);
-    TestStances();
-    TestSitOnSeat();
-    TestStepAndClimb();
-    TestLipSync();
-    TestSleep();
-    std::printf("%d passed, %d failed\n", g_pass, g_fail);
+    // eon_tests [contentDir] [--only <substring>] [--list] [--times]
+    std::string content = EON_CONTENT_DIR, only;
+    bool list = false, times = false;
+    for (int a = 1; a < argc; ++a) {
+        const std::string s = argv[a];
+        if (s == "--only" && a + 1 < argc) only = argv[++a];
+        else if (s == "--list") list = true;
+        else if (s == "--times") times = true;
+        else content = s;
+    }
+    int ran = 0;
+#define RUN(fn, ...) do { if (list) { std::printf("%s\n", #fn); break; } \
+        if (!only.empty() && std::string(#fn).find(only) == std::string::npos) break; \
+        g_test = #fn; ++ran; const auto t0 = std::chrono::steady_clock::now(); fn(__VA_ARGS__); \
+        if (times) std::printf("  %-32s %6.2f s\n", #fn, std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count()); } while (0)
+    RUN(TestOpenBattery);
+    RUN(TestSimpleLoop);
+    RUN(TestSwitchAndLamp);
+    RUN(TestUnconnectedWireDoesNothing);
+    RUN(TestParallel);
+    RUN(TestShortCircuit);
+    RUN(TestBatteryDrains);
+    RUN(TestMotor);
+    RUN(TestZoneRoundTrip, content);
+    RUN(TestHingeAndSliderBasics);
+    RUN(TestWaitingAreaLight, content);
+    RUN(TestTestZoneButton, content);
+    RUN(TestLooseBatterySettles, content);
+    RUN(TestClipPullOffAndReattach);
+    RUN(TestDirectTouchLightsBulb);
+    RUN(TestCharacterImport);
+    RUN(TestBodyState);
+    RUN(TestWardrobeRules);
+    RUN(TestMotorPressesButton, content);
+    RUN(TestMotorWalksAndStopsAtWall, content);
+    RUN(TestMotorGripsAndLifts, content);
+    RUN(TestMemoryGraph);
+    RUN(TestJennyLearnsTheButton, content);
+    RUN(TestFlipsWallSwitch, content);
+    RUN(TestPullsLever, content);
+    RUN(TestCarriesThings, content);
+    RUN(TestStances);
+    RUN(TestSitOnSeat);
+    RUN(TestStepAndClimb);
+    RUN(TestLipSync);
+    RUN(TestSleep);
+    if (list) return 0;
+    std::printf("%d passed, %d failed (%d tests)\n", g_pass, g_fail, ran);
     return g_fail == 0 ? 0 : 1;
 }

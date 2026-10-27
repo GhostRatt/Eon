@@ -16,7 +16,14 @@ Kelvin's custom-engine sim: one AI agent, Jenny, living in a physical world (C++
 
 Only `Read` a whole file when you're about to rewrite most of it. For edits, `show` the function, then `Edit` with the exact text.
 
-## Build / test
+## Build / test: use tools/dev.py (prints only what matters)
+- `python3 tools/dev.py check [filter] [--apps]`: builds (errors only, trimmed), runs eon_tests (+ eongraph tests when unfiltered), and prints one summary line. Use it after every change.
+- `python3 tools/dev.py test <filter>`: just the matching tests (`eon_tests --only X`, `--list`, `--times`).
+- `python3 tools/dev.py shot NAME [zone.json] [sim args]` writes `out/shots/NAME.png`; `dev.py sheet OUT A B C [--cols 2] [--full]` makes a contact sheet with the HUD cropped. Read only the sheet, not every shot.
+- `python3 tools/dev.py handoff`: a compact state of the work (commits, uncommitted symbols, notes, TODOs). Run it first after a context reset.
+- `python3 tools/dev.py viz` regenerates the visual (`out/eon_codegraph.html`). Republish it to the "Eon Code Atlas" artifact when the code has changed a lot.
+
+Raw commands, if needed:
 - `cmake --build build` builds the tests and libraries (headless); `./build/bin/eon_tests` must stay at 0 failed.
 - `cmake --build build-apps` builds `eon_sim` and `eon_editor` (raylib).
 - Renders: `xvfb-run -a ./build-apps/bin/eon_sim content/zones/test_zone_01.json --spawn X Z YAWDEG --settle SECONDS --cam x y z tx ty tz --shot NAME.png`. The PNG lands in the cwd under its basename. Extras: `--stance N`, `--stance-at T N`, `--demo learn|switch|lever|crate`, `--show-mind`, `--mind-out DIR`, `--power`.

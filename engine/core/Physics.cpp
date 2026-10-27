@@ -30,6 +30,7 @@ namespace Layers {
 constexpr JPH::ObjectLayer kStatic = 0;
 constexpr JPH::ObjectLayer kMoving = 1;
 constexpr JPH::ObjectLayer kGhost = 2;
+constexpr JPH::ObjectLayer kAgent = 3;
 }
 
 class BPLayers final : public JPH::BroadPhaseLayerInterface {
@@ -47,7 +48,7 @@ class ObjVsBP final : public JPH::ObjectVsBroadPhaseLayerFilter {
 public:
     bool ShouldCollide(JPH::ObjectLayer l, JPH::BroadPhaseLayer bp) const override {
         if (l == Layers::kGhost) return false;
-        return l == Layers::kMoving || bp.GetValue() == 1;
+        return l == Layers::kMoving || l == Layers::kAgent || bp.GetValue() == 1;
     }
 };
 
@@ -55,7 +56,8 @@ class ObjPair final : public JPH::ObjectLayerPairFilter {
 public:
     bool ShouldCollide(JPH::ObjectLayer a, JPH::ObjectLayer b) const override {
         if (a == Layers::kGhost || b == Layers::kGhost) return false;
-        return a == Layers::kMoving || b == Layers::kMoving;
+        if (a == Layers::kAgent && b == Layers::kAgent) return false;
+        return a == Layers::kMoving || b == Layers::kMoving || a == Layers::kAgent || b == Layers::kAgent;
     }
 };
 
@@ -156,13 +158,15 @@ BodyHandle Physics::CreateBody(const BodyDesc& d) {
     const bool dynamic = d.mass > 0.f && !d.kinematic;
     const JPH::EMotionType motion = d.kinematic ? JPH::EMotionType::Kinematic
                                   : dynamic ? JPH::EMotionType::Dynamic : JPH::EMotionType::Static;
-    const JPH::ObjectLayer layer = d.ghost ? Layers::kGhost : (motion == JPH::EMotionType::Static ? Layers::kStatic : Layers::kMoving);
+    const JPH::ObjectLayer layer = d.ghost ? Layers::kGhost : d.agent ? Layers::kAgent
+                                 : (motion == JPH::EMotionType::Static ? Layers::kStatic : Layers::kMoving);
     JPH::BodyCreationSettings s(shape, JPH::RVec3(d.pos.x, d.pos.y, d.pos.z), J(d.rot), motion, layer);
     s.mFriction = d.friction;
     s.mRestitution = d.restitution;
     s.mLinearDamping = d.linearDamping;
     s.mAngularDamping = d.angularDamping;
     s.mUserData = d.userData;
+    s.mGravityFactor = d.gravityFactor;
     if (dynamic) {
         s.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
         s.mMassPropertiesOverride.mMass = d.mass;
@@ -319,15 +323,32 @@ float Physics::ConstraintForce(ConstraintHandle c, float dt) const {
     return 0.f;
 }
 
+namespace {
+class SkipAgentFilter final : public JPH::ObjectLayerFilter {
+public:
+    bool ShouldCollide(JPH::ObjectLayer l) const override { return l != Layers::kAgent && l != Layers::kGhost; }
+};
+}
+
+Vec3 Physics::GetHitNormal(BodyHandle h, const Vec3& p) const {
+    JPH::BodyLockRead lock(impl_->system.GetBodyLockInterface(), Id(h));
+    if (!lock.Succeeded()) return {0, 1, 0};
+    const JPH::Body& b = lock.GetBody();
+    const JPH::Vec3 n = b.GetWorldSpaceSurfaceNormal(JPH::SubShapeID(), JPH::RVec3(p.x, p.y, p.z));
+    return E(n);
+}
+
 bool Physics::RayCast(const Vec3& origin, const Vec3& dir, float maxDist, BodyHandle& hit, Vec3& point, float& dist,
-                      BodyHandle ignore) const {
+                      BodyHandle ignore, bool skipAgent) const {
     const Vec3 d = dir.Normalized() * maxDist;
     JPH::RRayCast ray{JPH::RVec3(origin.x, origin.y, origin.z), J(d)};
     JPH::RayCastResult result;
     JPH::IgnoreSingleBodyFilter filter(ignore == kNoBody ? JPH::BodyID() : Id(ignore));
     const JPH::BodyFilter defaultFilter;
     const JPH::BodyFilter& bodyFilter = ignore == kNoBody ? defaultFilter : static_cast<const JPH::BodyFilter&>(filter);
-    const bool ok = impl_->system.GetNarrowPhaseQuery().CastRay(ray, result, {}, {}, bodyFilter);
+    const SkipAgentFilter skip;
+    const JPH::ObjectLayerFilter all;
+    const bool ok = impl_->system.GetNarrowPhaseQuery().CastRay(ray, result, {}, skipAgent ? static_cast<const JPH::ObjectLayerFilter&>(skip) : all, bodyFilter);
     if (!ok) return false;
     hit = result.mBodyID.GetIndexAndSequenceNumber();
     dist = result.mFraction * maxDist;

@@ -5,6 +5,7 @@
 
 #include "character/Character.h"
 #include "character/BodyState.h"
+#include "character/Motor.h"
 #include "character/Posture.h"
 #include "character/Wardrobe.h"
 #include "core/Circuit.h"
@@ -401,6 +402,96 @@ static void TestWardrobeRules() {
     CHECK(!w.CanWear(0));                        // already on
 }
 
+struct TestJenny {
+    CharacterAsset a;
+    Character ch;
+    Motor motor;
+    MotorIntent in;
+    bool Init(World& w, const Vec3& pos, float yaw) {
+        if (!ImportFbx(std::string(EON_TEST_DATA) + "/test_rig.fbx", a)) return false;
+        ch.Init(&a);
+        motor.Init(ch, w);
+        motor.Teleport(ch, pos, yaw);
+        return true;
+    }
+    void Run(World& w, float seconds) {
+        for (float t = 0; t < seconds; t += 1 / 60.f) {
+            motor.PrePhysics(ch, w, in, 1 / 60.f);
+            w.Advance(1 / 60.f);
+            PostureParams p;
+            p.time = t;
+            motor.PostPhysics(ch, w, p, 1 / 60.f);
+        }
+    }
+};
+
+static void TestMotorPressesButton(const std::string& contentDir) {
+    World w;
+    CHECK(w.Load(contentDir + "/zones/test_zone_01.json"));
+    w.Advance(0.5);
+    const int lamp = FindByName(w, "BulbOnStand");
+    const int button = FindByName(w, "BigButton");
+    TestJenny j;
+    CHECK(j.Init(w, {0.f, 0.f, 0.58f}, 3.14159265f));   // standing at the table edge, facing it (-Z)
+    j.Run(w, 0.5);
+    CHECK_NEAR(w.PartOf(lamp)->brightness, 0.0, 1e-6);
+
+    // right hand: reach just past the top of the plunger (pressing into it)
+    const Vec3 top = w.BodyPosition(w.MainBodyOf(button)) + Vec3{0, 0.025f, 0};
+    j.in.hands[1].reach = true;
+    j.in.hands[1].target = top + Vec3{0, -0.03f, 0};
+    j.in.hands[1].effort = 0.3f;
+    j.Run(w, 2.0);
+    CHECK(w.PartOf(lamp)->brightness > 0.5);        // her hand physically pushed the button down
+
+    j.in.hands[1].reach = false;                     // let go: spring pushes it back up
+    j.Run(w, 1.0);
+    CHECK_NEAR(w.PartOf(lamp)->brightness, 0.0, 1e-6);
+}
+
+static void TestMotorWalksAndStopsAtWall(const std::string& contentDir) {
+    World w;
+    CHECK(w.Load(contentDir + "/zones/waiting_area.json"));
+    TestJenny j;
+    CHECK(j.Init(w, {0.f, 0.f, 0.5f}, 0.f));
+    j.in.moveDir = {0, 0, 1};                        // walk toward the south wall (z = +3)
+    j.Run(w, 1.0);
+    CHECK(j.motor.Position().z > 1.0f);              // she is moving
+    CHECK(j.motor.Feedback().speed > 0.8f);
+    j.Run(w, 4.0);
+    CHECK(j.motor.Position().z < 3.0f - 0.15f);      // but not through the wall
+    CHECK(j.motor.Position().z > 2.4f);
+    CHECK(j.motor.Feedback().bumped);
+    CHECK_NEAR(j.motor.Position().y, 0.0, 0.03);     // feet on the floor
+}
+
+static void TestMotorGripsAndLifts(const std::string& contentDir) {
+    World w;
+    CHECK(w.Load(contentDir + "/zones/test_zone_01.json"));
+    w.Advance(1.0);
+    const int spare = FindByName(w, "SpareBattery_9V");
+    const int body = w.MainBodyOf(spare);
+    const Vec3 b0 = w.BodyPosition(body);
+    TestJenny j;
+    CHECK(j.Init(w, {b0.x - 0.1f, 0.f, b0.z + 0.5f}, 3.14159265f));
+    j.Run(w, 0.3);
+    auto& h = j.in.hands[1];
+    h.reach = true;
+    h.target = b0 + Vec3{0, 0.07f, 0};               // palm just above the battery (pressing down would tip it over)
+    h.effort = 0.3f;
+    j.Run(w, 1.2);
+    h.grip = true;
+    j.Run(w, 0.2);
+    CHECK(j.motor.Feedback().holding[1]);
+    h.target = b0 + Vec3{0, 0.3f, 0};                // lift
+    j.Run(w, 1.5);
+    CHECK(w.BodyPosition(body).y > b0.y + 0.15f);
+    CHECK_NEAR(j.motor.Feedback().heldMass[1], 0.045, 0.01);
+    h.grip = false;                                  // drop it
+    j.Run(w, 1.5);
+    CHECK(w.BodyPosition(body).y < b0.y + 0.05f);
+}
+
 int main(int argc, char** argv) {
     const std::string content = argc > 1 ? argv[1] : EON_CONTENT_DIR;
     TestOpenBattery();
@@ -421,6 +512,9 @@ int main(int argc, char** argv) {
     TestCharacterImport();
     TestBodyState();
     TestWardrobeRules();
+    TestMotorPressesButton(content);
+    TestMotorWalksAndStopsAtWall(content);
+    TestMotorGripsAndLifts(content);
     std::printf("%d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
 }

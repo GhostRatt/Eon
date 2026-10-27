@@ -46,7 +46,7 @@ tz += [
     ent(10, "TestTable", "static", (0, 0.37, 0), (1.4, 0.74, 0.8), (200, 200, 200)),
     ent(20, "Battery_9V", "battery", (-0.4, 0.765, 0.1), (0.026, 0.048, 0.017), (30, 30, 30), mass=0.045,
         params={"voltage": 9.0, "internalR": 1.5, "capacityAh": 0.5}),
-    ent(21, "BigButton", "button", (0, 0.765, 0.15), (0.08, 0.05, 0.08), (200, 30, 30), mass=0.2),
+    ent(21, "BigButton", "button", (0, 0.765, 0.15), (0.08, 0.05, 0.08), (200, 30, 30)),   # screwed to the table
     ent(22, "BulbOnStand", "lamp", (0.4, 0.8, 0.1), (0.06, 0.12, 0.06), (250, 250, 220), mass=0.1,
         params={"ratedPower": 1.0, "ratedVoltage": 9.0}),
     ent(23, "Wire_Red", "wire", (-0.2, 0.745, 0.15), (0.4, 0.006, 0.006), (200, 40, 40), mass=0.01, params={"length": 0.4}),

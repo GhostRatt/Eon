@@ -18,6 +18,7 @@
 #include "character/BodyState.h"
 #include "character/Dangles.h"
 #include "character/Face.h"
+#include "character/Motor.h"
 #include "character/Posture.h"
 #include "character/Wardrobe.h"
 #include "core/World.h"
@@ -49,11 +50,15 @@ struct Body {
     FaceSim face;
     DangleSim hair;
     Wardrobe wardrobe;
+    Motor motor;
+    MotorIntent intent;
+    bool hasWalkTarget = false;
+    Vec3 walkTarget;
     float breathPhase = 0.f;
     bool loaded = false, showCapsules = false, showSkeleton = false;
     std::string info, lastWardrobeMsg;
 
-    void Load(const std::string& content, const std::string& fbxOverride) {
+    void Load(const std::string& content, const std::string& fbxOverride, World& world) {
         namespace fs = std::filesystem;
         const fs::path cfgPath = fs::path(content) / "characters/jenny/character.json";
         nlohmann::json cfg = nlohmann::json::object();
@@ -118,6 +123,7 @@ struct Body {
         ch.placement.r = Quat::AxisAngle({0, 1, 0}, cfg.value("yaw", 0.f) * 3.14159265f / 180.f);
         gfx.Init(ch, texDirs);
         face.Init(ch);
+        motor.Init(ch, world);
         hair.Init(ch, cfg.value("dangles", std::vector<std::string>{"hair_", "earring_"}));
         loaded = true;
         if (info.empty()) info = fs::path(fbx).filename().string();
@@ -133,12 +139,26 @@ struct Body {
         lastWardrobeMsg = wardrobe.garments[i].name + (ok ? (wardrobe.garments[i].worn ? " on" : " off") : ": " + why);
     }
 
-    void Update(float dt, float ambientC) {
+    // Before physics: her muscles act on the world.
+    void PrePhysics(World& world, float dt) {
+        if (!loaded) return;
+        if (hasWalkTarget) {
+            Vec3 d = walkTarget - motor.Position();
+            d.y = 0;
+            const float dist = d.Length();
+            if (dist < 0.25f) { hasWalkTarget = false; intent.moveDir = {}; }
+            else intent.moveDir = d.Normalized() * std::min(1.f, dist * 0.8f);
+        }
+        motor.PrePhysics(ch, world, intent, dt);
+    }
+
+    void Update(float dt, float ambientC, World& world) {
         if (!loaded) return;
         // physiology
         inputs.ambientC = ambientC;
         inputs.clothingClo = wardrobe.TotalClo();
-        inputs.exertion = posture.motion == TestMotion::Bounce ? 0.6f : posture.motion == TestMotion::WalkInPlace ? 0.35f : 0.05f;
+        inputs.exertion = posture.motion == TestMotion::Bounce ? 0.6f : posture.motion == TestMotion::WalkInPlace ? 0.35f
+                                                                                                   : motor.Feedback().exertion;
         state.Step(inputs, dt);
         breathPhase = std::fmod(breathPhase + dt * state.breathRate, 1.f);
 
@@ -147,7 +167,9 @@ struct Body {
         posture.breathPhase = breathPhase;
         posture.breathDepth = state.breathDepth;
         posture.shiver = state.shiver;
-        ApplyPosture(ch, posture);
+        posture.hasLook = intent.hasLook;
+        posture.lookAt = intent.lookAt;
+        motor.PostPhysics(ch, world, posture, dt);
         ch.UpdateLimbCollision(dt);
         wardrobe.Apply(ch);
         ch.UpdateSoftTissue(dt);
@@ -161,6 +183,8 @@ struct Body {
         fi.hot = state.sweat;
         fi.breath = breathPhase;
         fi.effort = inputs.exertion;
+        fi.hasLookAt = intent.hasLook;
+        fi.lookAt = intent.lookAt;
         fi.asleep = inputs.sleeping ? 1.f : 0.f;
         face.Update(ch, fi, dt);
 
@@ -207,6 +231,8 @@ int main(int argc, char** argv) {
     bool capsArg = false, skelArg = false, stripArg = false;
     float tempOverride = -1000.f, timeScale = 1.f;
     std::string wearArg;
+    bool spawnArg = false, reachArg = false, walkArg = false;
+    float spawn[3] = {0, 0, 0}, reachR[3] = {0, 0, 0}, walkTo[2] = {0, 0};
     bool powerAll = false, lightsOff = false, customCam = false;
     float settle = 0.f;
     float cam[6] = {0, 1.6f, 1.8f, 0, 0.9f, 0};
@@ -224,6 +250,9 @@ int main(int argc, char** argv) {
         else if (arg == "--timescale" && a + 1 < argc) timeScale = std::stof(argv[++a]);
         else if (arg == "--wear" && a + 1 < argc) wearArg = argv[++a];
         else if (arg == "--strip") stripArg = true;
+        else if (arg == "--spawn" && a + 3 < argc) { for (float& v : spawn) v = std::stof(argv[++a]); spawnArg = true; }
+        else if (arg == "--reach" && a + 3 < argc) { for (float& v : reachR) v = std::stof(argv[++a]); reachArg = true; }
+        else if (arg == "--walk" && a + 2 < argc) { for (float& v : walkTo) v = std::stof(argv[++a]); walkArg = true; }
         else if (arg == "--cam" && a + 6 < argc) { for (float& c : cam) c = std::stof(argv[++a]); customCam = true; }
         else zonePath = arg;
     }
@@ -249,7 +278,7 @@ int main(int argc, char** argv) {
             if (e.type == "switch") world.DebugActuate(e.id, false);
     }
     auto body = std::make_unique<Body>();
-    body->Load(content, fbxOverride);
+    body->Load(content, fbxOverride, world);
     body->posture.motion = static_cast<TestMotion>(std::clamp(motionArg, 0, 6));
     body->showCapsules = capsArg;
     body->showSkeleton = skelArg;
@@ -263,9 +292,22 @@ int main(int argc, char** argv) {
         pos = comma == std::string::npos ? comma : comma + 1;
     }
     auto ambient = [&]() { return tempOverride > -999.f ? tempOverride : world.GetZone().ambientC; };
+    if (spawnArg && body->loaded) body->motor.Teleport(body->ch, {spawn[0], 0.f, spawn[1]}, spawn[2] * DEG2RAD);
+    if (reachArg) {
+        auto& h = body->intent.hands[1];
+        h.reach = true;
+        h.target = {reachR[0], reachR[1], reachR[2]};
+        h.effort = 0.3f;
+        body->intent.hasLook = true;
+        body->intent.lookAt = h.target;
+    }
+    if (walkArg) { body->walkTarget = {walkTo[0], 0.f, walkTo[1]}; body->hasWalkTarget = true; }
     if (settle > 0.f) {
-        world.Advance(settle);
-        for (float t = 0; t < settle; t += 1 / 60.f) body->Update(1 / 60.f, ambient());
+        for (float t = 0; t < settle; t += 1 / 60.f) {
+            body->PrePhysics(world, 1 / 60.f);
+            world.Advance(1 / 60.f);
+            body->Update(1 / 60.f, ambient(), world);
+        }
     }
 
     FlyCamera fly;
@@ -316,9 +358,19 @@ int main(int argc, char** argv) {
         if (IsKeyDown(KEY_F) && hasHit) world.SetPush(hit.body, hit.point, ToEon(Vector3Scale(ray.direction, 4.f)));
         else world.ClearPush();
 
+        // ---- Operator tests of her motor primitives (the mind will issue these later) ----
+        if (hasHit && !reachArg) { body->intent.hasLook = true; body->intent.lookAt = hit.point; }
+        if (IsMouseButtonPressed(MOUSE_BUTTON_MIDDLE) && hasHit) { body->walkTarget = hit.point; body->hasWalkTarget = true; }
+        if (IsKeyPressed(KEY_J) && hasHit) { auto& h = body->intent.hands[1]; h.reach = true; h.target = hit.point; h.effort = 0.5f; }
+        if (IsKeyPressed(KEY_U) && hasHit) { auto& h = body->intent.hands[0]; h.reach = true; h.target = hit.point; h.effort = 0.5f; }
+        if (IsKeyPressed(KEY_G)) for (auto& h : body->intent.hands) if (h.reach) h.grip = !h.grip;
+        if (IsKeyPressed(KEY_X)) for (auto& h : body->intent.hands) { h.reach = false; h.grip = false; }
+        if (IsKeyPressed(KEY_V)) for (auto& h : body->intent.hands) if (h.reach) h.target = h.target + Vec3{0, 0.25f, 0};   // lift
+
+        body->PrePhysics(world, dt);
         world.Tick(dt);
         world.BuildRenderFrame(frame);
-        body->Update(dt, ambient());
+        body->Update(dt, ambient(), world);
 
         BeginDrawing();
         ClearBackground({8, 8, 10, 255});
@@ -355,7 +407,7 @@ int main(int argc, char** argv) {
             DrawText("OPERATOR VIEW (Jenny never sees this)", 16, 14, 18, ORANGE);
             DrawText(TextFormat("%s   t = %.1fs   %d fps", world.GetZone().name.c_str(), world.SimTime(), GetFPS()), 16, 38, 18, RAYWHITE);
             DrawText("1 Waiting Area  2 Test Zone 01  R reset  H hud", 16, 62, 16, LIGHTGRAY);
-            DrawText("RMB look  WASD/QE fly  LMB grab+carry (wheel reach)  F push", 16, 82, 16, LIGHTGRAY);
+            DrawText("RMB look  WASD/QE fly  LMB grab (wheel reach)  F push  MMB walk there  J/U reach R/L  G grip  V lift  X let go", 16, 82, 16, LIGHTGRAY);
             DrawText(status.c_str(), 16, 106, 16, SKYBLUE);
 
             if (hasHit) {

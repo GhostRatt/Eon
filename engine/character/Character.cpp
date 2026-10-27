@@ -132,12 +132,20 @@ bool Character::Init(const CharacterAsset* asset) {
     float boneLo = 1e9f;
     for (const Transform& w : world_) boneLo = std::min(boneLo, w.t.y);
     placement.t = {0, -std::min(lo, boneLo), 0};
+    floorOffset = placement.t.y;
 
     ResetPose();
     FitCapsules();
     SetupSoftBones();
     limbDelta_.assign(4, Vec3{});
     return true;
+}
+
+Vec3 Character::BindPos(int bone) const {
+    if (bone < 0) return {};
+    const Mat4& m = asset_->bones[bone].bindWorld;
+    const Vec3 p{m.m[12], m.m[13], m.m[14]};
+    return placement.t + placement.r.Rotate(Quat::AxisAngle({0, 1, 0}, modelYaw).Rotate(p));
 }
 
 void Character::ResetPose() {

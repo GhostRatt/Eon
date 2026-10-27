@@ -30,6 +30,8 @@ struct BodyDesc {
     bool fastMoving = false;            // continuous collision for small/thin bodies
     bool kinematic = false;             // moved by MoveKinematic, pushes dynamic bodies
     bool ghost = false;                 // collides with nothing (hands/handles for constraints)
+    bool agent = false;                 // Jenny's own body/hands: hits the world, never each other
+    float gravityFactor = 1.f;
     uint32_t group = 0;                 // collision group (0 = none)
     uint32_t subGroup = 0;
     uint64_t userData = 0;
@@ -87,7 +89,8 @@ public:
 
     // Closest hit along a ray. Returns false on miss.
     bool RayCast(const Vec3& origin, const Vec3& dir, float maxDist, BodyHandle& hit, Vec3& point, float& dist,
-                 BodyHandle ignore = kNoBody) const;
+                 BodyHandle ignore = kNoBody, bool skipAgent = false) const;
+    Vec3 GetHitNormal(BodyHandle h, const Vec3& point) const;
 
 private:
     struct Impl;

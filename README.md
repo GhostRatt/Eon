@@ -30,6 +30,8 @@ Put the Primrose files in `content/characters/jenny/source/` (git-ignored, they 
 - **Sim:** RMB look, WASD/QE fly, LMB grab and carry (wheel = reach), F push with ~4 N, 1/2 switch zones, R reset, H HUD.
   Jenny test keys: M cycle test motion (idle, bounce, walk in place, hands on chest/hips, arms crossed, turn), 3-8 put on / take off garments,
   T room temperature (zone / 8°C / 38°C), Y game time x60, P streamer mode, C collision capsules, K skeleton.
+  Motor tests (what her mind will do later): middle-click the floor to walk there, J / U reach right / left hand to the cursor,
+  G close/open the reaching hand, V lift it 25 cm, X relax both arms.
 - **Editor:** EDIT mode — LMB select, arrows/PgUp/PgDn move, R/F rotate, N new box, Ctrl+D duplicate, Del delete, Ctrl+S save. P toggles PLAY mode (physics on, grab/push/Space to test); stopping restores the layout.
 
 ## Status
@@ -47,5 +49,6 @@ Put the Primrose files in `content/characters/jenny/source/` (git-ignored, they 
 | `engine/character/Face` | blinking (random, tired = slow/heavy lids), eye saccades, mood/cold/heat expressions on ARKit morphs |
 | `engine/character/Dangles` | hair + earring bone chains (33 chains / 129 bones): gravity, swing, styled shape, head/torso collision |
 | `engine/character/BodyState` | needs, core temp, sweat → skin sheen, shiver tremor, breathing rate/depth, heart rate, mood, body-sense text |
+| `engine/character/Motor` | her motor primitives (walk direction, face, look, per-hand reach/grip/effort): real torso + hand bodies in Jolt, walls stop her, light things get shoved, hands are muscle-driven (60 N max) so they get blocked by surfaces and physically push buttons, grips slip past 120 N, bends at the hips to reach across a table, planted-foot gait with hip bob and arm swing |
 | `engine/character/Wardrobe` | garments on her skeleton, layer rules (outer off first), bra/panty support for soft tissue, fit morphs, clo, streamer mode keeps underwear on |
 | Mind bridge + sensor firewall, OBS | step 5 |

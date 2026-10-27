@@ -120,7 +120,9 @@ void DangleSim::Update(Character& ch, float dt) {
                 const Vec3 v = (c.pos[i] - c.prev[i]) * (1.f - settings.damping);
                 c.prev[i] = c.pos[i];
                 c.pos[i] += v + g * (h * h);
-                c.pos[i] += (goal[i] - c.pos[i]) * settings.stiffness;
+                // styled shape holds near the scalp, tips hang free (real hair falls when she bends over)
+                const float k = settings.stiffness * (1.f - 0.85f * float(i) / float(n));
+                c.pos[i] += (goal[i] - c.pos[i]) * k;
             }
             for (int it = 0; it < 2; ++it) {
                 for (size_t i = 1; i <= n; ++i) {

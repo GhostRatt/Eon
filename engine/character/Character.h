@@ -51,6 +51,7 @@ public:
     const RigMap& Rig() const { return rig_; }
 
     Transform placement;              // model -> world (position on the floor, facing)
+    float floorOffset = 0.f;          // placement.t.y that puts her soles on y = 0
     float modelYaw = 0.f;             // auto-detected: rotates the model so it faces +Z
 
     // ---- Pose ----
@@ -59,6 +60,7 @@ public:
     const std::vector<Transform>& World() const { return world_; }
     void ComputeWorld();                               // local -> world (includes placement)
     Vec3 BonePos(int bone) const { return bone >= 0 ? world_[bone].t : Vec3{}; }
+    Vec3 BindPos(int bone) const;      // where the bone would be in the bind pose at the current placement
 
     // Rotates a bone (world-space delta) and refreshes world transforms of its subtree.
     void RotateBoneWorld(int bone, const Quat& delta);

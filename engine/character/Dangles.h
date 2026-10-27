@@ -11,7 +11,7 @@ namespace eon {
 // under gravity, swing with her motion, keep a little of their styled shape, and collide with her head,
 // neck and torso.
 struct DangleSettings {
-    float stiffness = 0.08f;   // pull back toward the styled (animated) shape per step, 0..1
+    float stiffness = 0.05f;   // pull back toward the styled (animated) shape per step, 0..1
     float damping = 0.06f;     // velocity loss per step
     float gravityScale = 1.f;
     float radius = 0.012f;     // collision thickness of the strand (m)

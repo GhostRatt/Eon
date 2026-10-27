@@ -53,6 +53,7 @@ void ApplyPosture(Character& ch, const PostureParams& p) {
             break;
         default: break;
         }
+        offsetW += p.pelvisOffset;
         const Vec3 d = toLocal.Rotate(offsetW);
         const Vec3 ps = parent >= 0 ? ch.World()[parent].s : Vec3{1, 1, 1};
         pel.t += Vec3{d.x / ps.x, d.y / ps.y, d.z / ps.z};
@@ -68,6 +69,16 @@ void ApplyPosture(Character& ch, const PostureParams& p) {
     Vec3 left{1, 0, 0};
     if (r.thigh[0] >= 0 && r.thigh[1] >= 0) left = (ch.BonePos(r.thigh[0]) - ch.BonePos(r.thigh[1])).Normalized({1, 0, 0});
     if (top >= 0) ch.RotateBoneWorld(top, Quat::AxisAngle(left, -0.02f * breath));
+    // Bending over / reaching: the spine folds forward (most at the lower back) and twists toward the hand
+    if (std::fabs(p.lean) > 1e-3f || std::fabs(p.leanTwist) > 1e-3f) {
+        // most of a bend comes from the hips (the legs are re-planted by IK below), the rest from the back
+        const int chain[4] = {r.pelvis, r.spine[0], r.spine[1], r.spine[2]};
+        const float share[4] = {0.45f, 0.25f, 0.18f, 0.12f};
+        for (int k = 0; k < 4; ++k) {
+            if (chain[k] < 0) continue;
+            ch.RotateBoneWorld(chain[k], Quat::AxisAngle(left, p.lean * share[k]) * Quat::AxisAngle({0, 1, 0}, p.leanTwist * share[k]));
+        }
+    }
     // Shivering: fast small tremor through the trunk and shoulders, arms pulled in a little
     if (p.shiver > 0.01f) {
         const float tr = p.shiver * 0.012f;
@@ -91,6 +102,7 @@ void ApplyPosture(Character& ch, const PostureParams& p) {
             const float ph = t * 2.f * kPi * 0.9f + (i == 0 ? 0.f : kPi);
             foot.y += 0.08f * std::max(0.f, std::sin(ph));
         }
+        if (p.footOverride) foot = p.footTarget[i];
         ch.SolveTwoBone(r.thigh[i], r.calf[i], r.foot[i], foot, knee + fwd * 0.5f);
     }
 
@@ -124,13 +136,38 @@ void ApplyPosture(Character& ch, const PostureParams& p) {
             break;
         }
         default:
-            target = sh + Vec3{0, -armLen * 0.97f, 0} + left * (sideSign * 0.05f) + fwd * (0.03f + sway);
+            target = sh + Vec3{0, -armLen * 0.97f, 0} + left * (sideSign * 0.05f) + fwd * (0.03f + sway + p.armSwing[i]);
             pole = sh + Vec3{0, -0.3f, 0} - fwd * 0.5f + left * (sideSign * 0.1f);
             break;
         }
+        if (p.handOverride[i]) {
+            target = p.handTarget[i];
+            // elbow bends down and out, like a person reaching
+            pole = sh + Vec3{0, -0.45f, 0} + left * (sideSign * 0.35f) - fwd * 0.2f;
+        }
         // relaxed arms: hands follow the forearm; contact poses keep the palm orientation
         const bool relaxed = p.motion != TestMotion::HandsOnChest && p.motion != TestMotion::HandsOnHips && p.motion != TestMotion::ArmsCrossed;
-        ch.SolveTwoBone(a, b, c, target, pole, 1.f, !relaxed);
+        ch.SolveTwoBone(a, b, c, target, pole, 1.f, !relaxed && !p.handOverride[i]);
+    }
+
+    // Head turns toward what she looks at (neck takes 40%, head the rest, limited like a real neck)
+    if (p.hasLook && r.head >= 0) {
+        const Vec3 hp = ch.BonePos(r.head);
+        Vec3 to = (p.lookAt - hp).Normalized(fwd);
+        const Vec3 flatTo = Vec3{to.x, 0, to.z}.Normalized(fwd);
+        float yaw = std::atan2(fwd.Cross(flatTo).y, fwd.Dot(flatTo));
+        yaw = std::clamp(yaw, -1.2f, 1.2f);
+        const float pitch = std::clamp(std::asin(std::clamp(to.y, -1.f, 1.f)), -0.7f, 0.6f);
+        const Quat qYaw = Quat::AxisAngle({0, 1, 0}, yaw);
+        const Vec3 side = qYaw.Rotate(left);
+        const Quat q = Quat::AxisAngle(side, -pitch) * qYaw;
+        auto part = [](const Quat& qq, float k) {
+            const Quat id{};
+            const float d = qq.w < 0 ? -1.f : 1.f;
+            return Quat{qq.x * d * k, qq.y * d * k, qq.z * d * k, id.w + (qq.w * d - 1.f) * k}.Normalized();
+        };
+        if (r.neck >= 0) ch.RotateBoneWorld(r.neck, part(q, 0.4f));
+        ch.RotateBoneWorld(r.head, part(q, 0.6f));
     }
 }
 

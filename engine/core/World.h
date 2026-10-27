@@ -55,7 +55,22 @@ public:
     bool PhysicsEnabled() const { return physicsOn_; }
 
     // ---- Physical interaction (operator now, Jenny's hands later) ----
-    bool RayCast(const Vec3& origin, const Vec3& dir, float maxDist, RayHit& out) const;
+    bool RayCast(const Vec3& origin, const Vec3& dir, float maxDist, RayHit& out, bool skipAgent = false) const;
+    Vec3 SurfaceNormal(int body, const Vec3& point) const;
+    float BodyMass(int body) const;   // 0 = static/immovable
+
+    // ---- Agent bodies (Jenny's torso/hands live in the same physics as everything else) ----
+    int AddAgentBody(const BodyDesc& d);
+    // Each fixed step a force (capped at maxForce N) drives the body toward target, like a muscle.
+    void SetDrive(int body, const Vec3& target, float maxForce, float frequency = 12.f, float damping = 1.f);
+    void ClearDrive(int body);
+    void SetKinematicTarget(int body, const Vec3& pos, const Quat& rot);
+    // Rigid joint between two bodies at a point (a grip). Returns a handle for Detach/JointForce.
+    int Attach(int bodyA, int bodyB, const Vec3& worldPoint);
+    void Detach(int joint);
+    float JointForce(int joint) const;   // N during the last step
+    Vec3 BodyVelocity(int body) const;
+    Quat BodyRotation(int body) const;
     void BeginGrab(int body, const Vec3& worldPoint);
     void SetGrabTarget(const Vec3& worldTarget);
     void EndGrab();
@@ -75,6 +90,7 @@ public:
     const Circuit& GetCircuit() const { return circuit_; }
     const Part* PartOf(int entityId) const;
     double SimTime() const { return simTime_; }
+    int Generation() const { return generation_; }   // bumps on every Reset (agent bodies must be re-added)
     const std::string& Path() const { return path_; }
 
     int EntityOfBody(int body) const;
@@ -91,7 +107,7 @@ public:
     void BuildRenderFrame(RenderFrame& out) const;
 
 private:
-    enum class Role : uint8_t { Main, Plunger, Lever, RopeSegment, Clip };
+    enum class Role : uint8_t { Main, Plunger, Lever, RopeSegment, Clip, Agent };
 
     struct RtBody {
         BodyHandle h = kNoBody;
@@ -172,6 +188,13 @@ private:
     std::vector<IdealLink> idealLinks_;
     std::vector<PushRt> pushes_;
     GrabRt grab_;
+    struct DriveRt { int body = -1; Vec3 target; float maxForce = 0.f, freq = 12.f, damping = 1.f; };
+    struct KinRt { int body = -1; Vec3 pos; Quat rot; };
+    std::vector<DriveRt> drives_;
+    std::vector<KinRt> kinematic_;
+    std::vector<ConstraintHandle> joints_;
+    float lastDt_ = static_cast<float>(kFixedDt);
+    int generation_ = 0;
 
     bool physicsOn_ = true;
     double accumulator_ = 0.0;

@@ -68,6 +68,10 @@ void World::Reset() {
     switches_.clear();
     idealLinks_.clear();
     pushes_.clear();
+    drives_.clear();
+    kinematic_.clear();
+    ++generation_;
+    joints_.clear();
     grab_ = {};   // its bodies were removed by Clear()
 
     zone_.BuildCircuit(circuit_);
@@ -398,7 +402,22 @@ void World::Advance(double seconds) {
 }
 
 void World::FixedStep(float dt) {
+    lastDt_ = dt;
     if (physicsOn_) {
+        for (const KinRt& k : kinematic_)
+            if (k.body >= 0 && k.body < (int)bodies_.size()) physics_->MoveKinematic(bodies_[k.body].h, k.pos, k.rot, dt);
+        for (const DriveRt& d : drives_) {
+            if (d.body < 0 || d.body >= (int)bodies_.size()) continue;
+            const BodyHandle h = bodies_[d.body].h;
+            const float m = physics_->GetMass(h);
+            if (m <= 0.f) continue;
+            const float w = 2.f * 3.14159265f * d.freq;
+            const Vec3 p = physics_->GetPosition(h);
+            Vec3 f = (d.target - p) * (m * w * w) - physics_->GetLinearVelocity(h) * (2.f * m * w * d.damping);
+            const float len = f.Length();
+            if (len > d.maxForce) f = f * (d.maxForce / len);
+            physics_->AddForce(h, f, p);
+        }
         ApplyForces(dt);
         physics_->Step(dt);
         UpdateClips(dt);
@@ -506,11 +525,11 @@ void World::UpdateConnections() {
     }
 }
 
-bool World::RayCast(const Vec3& origin, const Vec3& dir, float maxDist, RayHit& out) const {
+bool World::RayCast(const Vec3& origin, const Vec3& dir, float maxDist, RayHit& out, bool skipAgent) const {
     BodyHandle h;
     Vec3 p;
     float dist;
-    if (!physics_->RayCast(origin, dir, maxDist, h, p, dist)) return false;
+    if (!physics_->RayCast(origin, dir, maxDist, h, p, dist, kNoBody, skipAgent)) return false;
     const int idx = static_cast<int>(physics_->GetUserData(h)) - 1;
     if (idx < 0 || idx >= (int)bodies_.size()) return false;
     out.body = idx;
@@ -637,10 +656,71 @@ std::vector<Vec3> World::TerminalPositions(int entityId) const {
     return out;
 }
 
+Vec3 World::SurfaceNormal(int body, const Vec3& point) const {
+    return body >= 0 && body < (int)bodies_.size() ? physics_->GetHitNormal(bodies_[body].h, point) : Vec3{0, 1, 0};
+}
+
+float World::BodyMass(int body) const {
+    return body >= 0 && body < (int)bodies_.size() ? physics_->GetMass(bodies_[body].h) : 0.f;
+}
+
+int World::AddAgentBody(const BodyDesc& d) {
+    BodyDesc a = d;
+    a.agent = true;
+    const Vec3 draw = d.shape == Shape::Capsule ? Vec3{2 * d.radius, 2 * (d.halfHeight + d.radius), 2 * d.radius} : d.halfExtent * 2.f;
+    return AddBody(a, 0, Role::Agent, draw, Rgb{255, 0, 255});
+}
+
+void World::SetDrive(int body, const Vec3& target, float maxForce, float frequency, float damping) {
+    for (DriveRt& d : drives_) if (d.body == body) { d.target = target; d.maxForce = maxForce; d.freq = frequency; d.damping = damping; return; }
+    drives_.push_back({body, target, maxForce, frequency, damping});
+    if (body >= 0 && body < (int)bodies_.size()) physics_->Wake(bodies_[body].h);
+}
+
+void World::ClearDrive(int body) {
+    drives_.erase(std::remove_if(drives_.begin(), drives_.end(), [body](const DriveRt& d) { return d.body == body; }), drives_.end());
+}
+
+void World::SetKinematicTarget(int body, const Vec3& pos, const Quat& rot) {
+    for (KinRt& k : kinematic_) if (k.body == body) { k.pos = pos; k.rot = rot; return; }
+    kinematic_.push_back({body, pos, rot});
+}
+
+int World::Attach(int bodyA, int bodyB, const Vec3& worldPoint) {
+    if (bodyA < 0 || bodyB < 0 || bodyA >= (int)bodies_.size() || bodyB >= (int)bodies_.size()) return -1;
+    const BodyHandle b = physics_->IsDynamic(bodies_[bodyB].h) ? bodies_[bodyB].h : kNoBody;   // static: pin to world
+    const ConstraintHandle c = physics_->AddPoint(bodies_[bodyA].h, b, worldPoint);
+    joints_.push_back(c);
+    physics_->Wake(bodies_[bodyA].h);
+    return static_cast<int>(joints_.size()) - 1;
+}
+
+void World::Detach(int joint) {
+    if (joint < 0 || joint >= (int)joints_.size() || joints_[joint] == kNoConstraint) return;
+    physics_->RemoveConstraint(joints_[joint]);
+    joints_[joint] = kNoConstraint;
+}
+
+float World::JointForce(int joint) const {
+    if (joint < 0 || joint >= (int)joints_.size() || joints_[joint] == kNoConstraint) return 0.f;
+    return physics_->ConstraintForce(joints_[joint], lastDt_);
+}
+
+Vec3 World::BodyVelocity(int body) const {
+    return body >= 0 && body < (int)bodies_.size() ? physics_->GetLinearVelocity(bodies_[body].h) : Vec3{};
+}
+
+Quat World::BodyRotation(int body) const {
+    Vec3 p; Quat q;
+    if (body >= 0 && body < (int)bodies_.size()) physics_->GetTransform(bodies_[body].h, p, q);
+    return q;
+}
+
 void World::BuildRenderFrame(RenderFrame& out) const {
     out.pieces.clear();
     out.lights.clear();
     for (const RtBody& b : bodies_) {
+        if (b.role == Role::Agent) continue;   // drawn by the character renderer
         RenderPiece p;
         physics_->GetTransform(b.h, p.pos, p.rot);
         p.rot = (p.rot * b.drawOffset).Normalized();

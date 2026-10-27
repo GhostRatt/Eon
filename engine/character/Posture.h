@@ -15,6 +15,18 @@ struct PostureParams {
     float breathPhase = -1.f;   // 0..1 cycle position from the body sim (>= 0 overrides breathRate)
     float breathDepth = 0.5f;   // 0..1
     float shiver = 0.f;         // 0..1 fine tremor when cold
+
+    // Motor overrides (set by Motor while she walks/reaches)
+    Vec3 pelvisOffset;                  // world-space shift of the hips (gait bob)
+    bool footOverride = false;
+    Vec3 footTarget[2];                 // world positions of the feet
+    bool handOverride[2] = {false, false};
+    Vec3 handTarget[2];                 // world positions of the hands (her physical hands)
+    float armSwing[2] = {0.f, 0.f};     // forward/back swing of relaxed arms (m)
+    float lean = 0.f;                   // bend forward at the waist (radians), e.g. reaching across a table
+    float leanTwist = 0.f;              // turn the shoulders toward the reaching side (radians)
+    bool hasLook = false;
+    Vec3 lookAt;
 };
 
 // Builds the full pose for this frame (resets to bind first). Call before soft tissue/limb collision.

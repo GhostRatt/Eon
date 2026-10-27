@@ -190,7 +190,7 @@ void ApplyPosture(Character& ch, const PostureParams& p) {
             }
             ch.OrientHand(i, palm, fingers, p.orientWeight[i]);
         }
-        ch.PoseFingers(i, p.fingerCurl[i], p.fingerSpread[i], p.thumbCurl[i]);
+        ch.PoseFingers(i, p.fingerCurl[i], p.fingerSpread[i], p.thumbCurl[i], p.indexCurl[i]);
     }
 
     // Head turns toward what she looks at (neck takes 40%, head the rest, limited like a real neck)

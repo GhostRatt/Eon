@@ -33,6 +33,7 @@ Put the Primrose files in `content/characters/jenny/source/` (git-ignored, they 
   Motor tests (what her mind will do later): middle-click the floor to walk there, J / U reach right / left hand to the cursor,
   G close/open the reaching hand, V lift it 25 cm, X relax both arms, arrows move her (relative to your camera),
   Z cycle stance (Backspace = stand), hold Space to climb onto/off what's in front of her, O make her talk.
+  Render scripts: `--stance-at T S` (switch stance at time T), `--demo switch|lever|crate` (scripted hand use in Test Zone 01).
 - **Editor:** EDIT mode — LMB select, arrows/PgUp/PgDn move, R/F rotate, N new box, Ctrl+D duplicate, Del delete, Ctrl+S save. P toggles PLAY mode (physics on, grab/push/Space to test); stopping restores the layout.
 
 ## Status
@@ -53,7 +54,9 @@ Put the Primrose files in `content/characters/jenny/source/` (git-ignored, they 
 | `engine/character/Motor` | her motor primitives (walk direction, face, look, per-hand reach/grip/effort): real torso + hand bodies in Jolt, walls stop her, light things get shoved, hands are muscle-driven (60 N max) so they get blocked by surfaces and physically push buttons, grips slip past 120 N, bends at the hips to reach across a table, planted-foot gait with hip bob and arm swing |
 | Stances | stand, crouch (duck-walk), kneel, sit on the floor, sit on a seat (chair/bed edge/box — only if something is behind her), hands-and-knees crawl, prone (army crawl), lie on back / left side / right side (bed or floor); she moves through the in-between positions, and rolls over back ↔ side ↔ front keeping her head in place |
 | Hands | 15 finger joints per hand found by name; fingers curl loosely when relaxed, open and spread when reaching, close around what she holds (fist on nothing), lie flat and spread when planted; palms turn toward what she reaches for, flat on the floor when planted; torso pitches until planted hands actually reach the floor |
-| Floor contact | feet keep their orientation under hip lean (flat in a crouch); foot skin samples are pushed above the floor when kneeling/lying (tops of the feet flat); hair lies on the floor/bed instead of going through |
+| Using things | fingertip pointing (a small physical fingertip presses rockers/small buttons), whole-hand presses, gripping and throwing a wall lever along its arc, one- or two-handed carrying with targets that move with her body, shared weight between hands, wrists hold carried things steady, loads slow her down, hands draw back after letting go |
+| Getting into bed | sit on the edge → lie down along it on her side (hips shuffle onto it, legs swing up) → roll → sit up over the edge she faces → stand on the floor |
+| Floor contact | feet keep their orientation under hip lean (flat in a crouch); foot skin samples are pushed above the floor when kneeling/lying (tops of the feet flat); hair lies on the floor/bed instead of going through; breasts and glutes flatten and spread against the floor/bed they're pressed into |
 | Feet & ground | barefoot `FlatFeets` + floor refit so soles sit flat; per-foot ground contact and normals; steps up/down to 38 cm; stops at drops |
 | Climbing | Space with a direction: hands on the edge, knee up, stand on top (30–135 cm); climbs down off ledges too |
 | `engine/character/LipSync` | text → visemes (or TTS phoneme timings, or live amplitude) on ARKit mouth morphs with coarticulation |

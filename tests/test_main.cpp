@@ -505,6 +505,143 @@ static void TestMotorGripsAndLifts(const std::string& contentDir) {
     CHECK(w.BodyPosition(body).y < b0.y + 0.05f);
 }
 
+// The point on a body of `entity` hit by a ray, or false (what she'd see/feel; tests use it to aim her hand).
+static bool HitEntity(const World& w, int entity, const Vec3& from, const Vec3& dir, float len, RayHit& out) {
+    return w.RayCast(from, dir, len, out, true) && w.EntityOfBody(out.body) == entity;
+}
+
+static void TestFlipsWallSwitch(const std::string& contentDir) {
+    World w;
+    CHECK(w.Load(contentDir + "/zones/test_zone_01.json"));
+    w.Advance(0.5);
+    const int sw = FindByName(w, "RoomSwitch");
+    const bool before = w.PartOf(sw)->closed;
+    TestJenny j;
+    CHECK(j.Init(w, {2.05f, 0.f, 1.8f}, 3.14159265f * 0.5f));   // facing the wall (+X)
+    j.Run(w, 0.5);
+    // which half of the rocker sticks out? press that one in with a fingertip
+    RayHit up, dn;
+    const bool hu = HitEntity(w, sw, {2.2f, 1.212f, 1.8f}, {1, 0, 0}, 0.5f, up);
+    const bool hd = HitEntity(w, sw, {2.2f, 1.188f, 1.8f}, {1, 0, 0}, 0.5f, dn);
+    CHECK(hu && hd);
+    const RayHit& press = up.dist < dn.dist ? up : dn;
+    auto& h = j.in.hands[1];
+    h.reach = true;
+    h.shape = HandShape::Point;
+    h.target = press.point + Vec3{0.015f, 0, 0};
+    h.effort = 0.4f;
+    j.Run(w, 1.5);
+    CHECK(w.PartOf(sw)->closed != before);           // flipped
+    h.reach = false;
+    j.Run(w, 1.0);
+    CHECK(w.PartOf(sw)->closed != before);           // and it stays flipped (snaps over)
+}
+
+static void TestPullsLever(const std::string& contentDir) {
+    World w;
+    CHECK(w.Load(contentDir + "/zones/test_zone_01.json"));
+    w.Advance(0.5);
+    const int lever = FindByName(w, "WallLever");
+    const int lamp = FindByName(w, "LeverLamp");
+    CHECK(!w.PartOf(lever)->closed);
+    TestJenny j;
+    CHECK(j.Init(w, {-1.85f, 0.f, 0.8f}, -3.14159265f * 0.5f));   // facing the west wall
+    j.Run(w, 0.5);
+    // find the handle (it hangs down at an angle): feel down onto it ~20 cm out from the wall
+    RayHit top;
+    CHECK(HitEntity(w, lever, {-2.27f, 1.5f, 0.8f}, {0, -1, 0}, 1.0f, top));
+    const Vec3 pivot{-2.45f, 1.15f, 0.8f};
+    auto& h = j.in.hands[1];
+    h.reach = true;
+    h.target = top.point + Vec3{0, 0.02f, 0};
+    h.effort = 0.6f;
+    j.Run(w, 1.0);
+    h.grip = true;
+    j.Run(w, 0.2);
+    CHECK(j.motor.Feedback().holding[1]);
+    // swing the hand up along the handle's arc
+    const Vec3 arm = top.point - pivot;
+    const float r = std::sqrt(arm.x * arm.x + arm.y * arm.y);
+    const float a0 = std::atan2(arm.y, arm.x);
+    for (int k = 1; k <= 30; ++k) {
+        const float a = a0 + (0.62f - a0) * (k / 30.f);
+        h.target = pivot + Vec3{r * std::cos(a), r * std::sin(a), 0.f};
+        j.Run(w, 0.05);
+    }
+    j.Run(w, 0.5);
+    CHECK(w.PartOf(lever)->closed);
+    CHECK(w.PartOf(lamp)->brightness > 0.5);
+    h.grip = false;
+    h.reach = false;
+    j.Run(w, 1.0);
+    CHECK(w.PartOf(lever)->closed);                  // stays up when let go
+}
+
+static void TestCarriesThings(const std::string& contentDir) {
+    {   // one hand: pick the spare battery off the table and walk off with it
+        World w;
+        CHECK(w.Load(contentDir + "/zones/test_zone_01.json"));
+        w.Advance(1.0);
+        const int body = w.MainBodyOf(FindByName(w, "SpareBattery_9V"));
+        const Vec3 b0 = w.BodyPosition(body);
+        TestJenny j;
+        CHECK(j.Init(w, {b0.x - 0.1f, 0.f, b0.z + 0.45f}, 3.14159265f));
+        j.Run(w, 0.3);
+        auto& h = j.in.hands[1];
+        h.reach = true;
+        h.target = b0 + Vec3{0, 0.07f, 0};
+        h.effort = 0.3f;
+        j.Run(w, 1.8);
+        h.grip = true;
+        j.Run(w, 0.2);
+        CHECK(j.motor.Feedback().holding[1]);
+        h.local = true;                               // hold it in front of her, wherever she goes
+        h.target = {-0.15f, 1.05f, 0.3f};
+        j.Run(w, 1.0);
+        j.in.moveDir = {0, 0, 1};                     // turn and walk away from the table
+        j.Run(w, 2.0);
+        j.in.moveDir = {};
+        j.Run(w, 0.8);
+        CHECK(j.motor.Feedback().holding[1]);
+        CHECK(w.BodyPosition(body).z > b0.z + 1.2f);  // it came with her
+        CHECK(w.BodyPosition(body).y > 0.8f);
+    }
+    {   // two hands: crouch, take a 4 kg crate by its sides, stand up and carry it
+        World w;
+        CHECK(w.Load(contentDir + "/zones/test_zone_01.json"));
+        w.Advance(1.0);
+        const int body = w.MainBodyOf(FindByName(w, "Crate"));
+        const Vec3 c0 = w.BodyPosition(body);
+        TestJenny j;
+        CHECK(j.Init(w, {c0.x, 0.f, c0.z + 0.42f}, 3.14159265f));   // facing it (-Z): her left is -X
+        j.in.stance = Stance::Crouch;
+        j.Run(w, 1.5);
+        for (int i = 0; i < 2; ++i) {
+            auto& h = j.in.hands[i];
+            h.reach = true;
+            h.effort = 0.7f;
+            h.target = c0 + Vec3{i == 0 ? -0.19f : 0.19f, 0.03f, 0.f};   // squeeze the sides
+        }
+        j.Run(w, 1.5);
+        j.in.hands[0].grip = j.in.hands[1].grip = true;
+        j.Run(w, 0.2);
+        CHECK(j.motor.Feedback().holding[0] && j.motor.Feedback().holding[1]);
+        for (int i = 0; i < 2; ++i) { j.in.hands[i].local = true; j.in.hands[i].target = {i == 0 ? 0.19f : -0.19f, 0.95f, 0.3f}; }
+        j.in.stance = Stance::Stand;
+        j.Run(w, 2.0);
+        CHECK(w.BodyPosition(body).y > c0.y + 0.4f);  // lifted
+        CHECK_NEAR(j.motor.Feedback().load, 4.0, 0.2);
+        CHECK(j.motor.Lean() < 0.3f);                  // carries it upright, close to her body
+        j.in.moveDir = {1, 0, 0};
+        j.Run(w, 2.0);
+        CHECK(j.motor.Feedback().speed < 1.3f);       // slower with a load
+        j.in.moveDir = {};
+        j.Run(w, 0.8);
+        CHECK(w.BodyPosition(body).x > c0.x + 1.0f);
+        CHECK(j.motor.Feedback().holding[0] && j.motor.Feedback().holding[1]);
+    }
+}
+
 static Zone FloorZone(float boxHeight, float boxZ) {
     Zone z;
     z.name = "Bench";
@@ -728,6 +865,9 @@ int main(int argc, char** argv) {
     TestMotorPressesButton(content);
     TestMotorWalksAndStopsAtWall(content);
     TestMotorGripsAndLifts(content);
+    TestFlipsWallSwitch(content);
+    TestPullsLever(content);
+    TestCarriesThings(content);
     TestStances();
     TestSitOnSeat();
     TestStepAndClimb();

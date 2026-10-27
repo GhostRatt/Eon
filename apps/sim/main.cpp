@@ -236,6 +236,42 @@ struct Body {
 
 } // namespace
 
+
+// Scripted hand use for renders (positions match content/zones/test_zone_01.json; the tests run the same moves).
+static void RunDemo(const std::string& d, float t, World& w, Body& b) {
+    auto& L = b.intent.hands[0];
+    auto& R = b.intent.hands[1];
+    auto& in = b.intent;
+    if (d == "switch") {   // stand at (2.05, 1.8) facing +X; fingertip presses the lower half of the rocker
+        R.reach = t > 0.5f && t < 2.5f;
+        R.shape = HandShape::Point;
+        R.target = {2.449f, 1.188f, 1.8f};
+        R.effort = 0.4f;
+    } else if (d == "lever") {   // stand at (-1.85, 0.8) facing -X; grab the handle and throw it up
+        const Vec3 pivot{-2.45f, 1.15f, 0.8f};
+        const float r = 0.208f, a0 = -0.523f;
+        R.reach = t > 0.3f && t < 3.6f;
+        R.effort = 0.6f;
+        R.grip = t > 1.3f && t < 3.2f;
+        const float u = std::clamp((t - 1.5f) / 1.5f, 0.f, 1.f);
+        const float a = a0 + (0.62f - a0) * u;
+        R.target = t < 1.5f ? Vec3{-2.27f, 1.066f, 0.8f} : pivot + Vec3{r * std::cos(a), r * std::sin(a), 0.f};
+    } else if (d == "crate") {   // stand at (-1.2, -1.18) facing -Z; crouch, take the crate by its sides, stand, walk
+        const Vec3 c0{-1.2f, 0.15f, -1.6f};
+        in.stance = t < 3.0f ? Stance::Crouch : Stance::Stand;
+        for (int i = 0; i < 2; ++i) {
+            auto& h = b.intent.hands[i];
+            h.reach = t > 1.2f;
+            h.effort = 0.7f;
+            h.grip = t > 2.7f;
+            h.local = t > 2.9f;
+            h.target = h.local ? Vec3{i == 0 ? 0.19f : -0.19f, 0.95f, 0.3f} : c0 + Vec3{i == 0 ? -0.19f : 0.19f, 0.03f, 0.f};
+        }
+        in.moveDir = t > 5.0f && t < 7.0f ? Vec3{1, 0, 0} : Vec3{};
+    }
+    (void)L; (void)w;
+}
+
 int main(int argc, char** argv) {
     const std::string content = ContentDir();
     const std::string waiting = content + "/zones/waiting_area.json";
@@ -252,6 +288,7 @@ int main(int argc, char** argv) {
     int stanceArg = -1;
     std::vector<std::pair<float, int>> stanceSeq;   // --stance-at T S: switch to stance S at settle time T
     bool climbArg = false;
+    std::string demoArg;   // --demo switch|lever|crate|battery: scripted hand use (same moves the tests check)
     std::string sayArg;
     float spawn[3] = {0, 0, 0}, reachR[3] = {0, 0, 0}, walkTo[2] = {0, 0};
     bool powerAll = false, lightsOff = false, customCam = false;
@@ -278,6 +315,7 @@ int main(int argc, char** argv) {
         else if (arg == "--stance-at" && a + 2 < argc) { const float t = std::stof(argv[++a]); stanceSeq.push_back({t, std::stoi(argv[++a])}); }
         else if (arg == "--say" && a + 1 < argc) sayArg = argv[++a];
         else if (arg == "--climb") climbArg = true;
+        else if (arg == "--demo" && a + 1 < argc) demoArg = argv[++a];
         else if (arg == "--cam" && a + 6 < argc) { for (float& c : cam) c = std::stof(argv[++a]); customCam = true; }
         else zonePath = arg;
     }
@@ -333,6 +371,7 @@ int main(int argc, char** argv) {
     if (settle > 0.f) {
         for (float t = 0; t < settle; t += 1 / 60.f) {
             for (const auto& [at, st] : stanceSeq) if (t >= at && t < at + 1 / 60.f) body->intent.stance = static_cast<Stance>(st);
+            if (!demoArg.empty()) RunDemo(demoArg, t, world, *body);
             body->PrePhysics(world, 1 / 60.f);
             world.Advance(1 / 60.f);
             body->Update(1 / 60.f, ambient(), world);

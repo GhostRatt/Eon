@@ -79,6 +79,9 @@ public:
     // Continuous push force at a point on a body, until cleared (or for `seconds` if > 0).
     void SetPush(int body, const Vec3& worldPoint, const Vec3& force, float seconds = -1.f);
     void ClearPush();
+    // Wrists holding something steady: a capped torque turns the body toward `rot` (like gripping hands resist twisting).
+    void SetSteady(int body, const Quat& rot, float maxTorque);
+    void ClearSteady(int body);
 
     // Debug actuation (editor/tests): physically presses a button or flips a switch.
     void DebugActuate(int entityId, bool on);
@@ -101,6 +104,7 @@ public:
 
     // Electrical contact state, for tests and the editor overlay.
     int ClipAttachedEntity(int wireEntityId, int end) const;   // entity the clip is latched to, or 0
+    float SwitchAngle(int entityId) const;                     // rocker/lever angle (rad), tests/editor only
     int ClipBodyOf(int wireEntityId, int end) const;
     std::vector<Vec3> TerminalPositions(int entityId) const;
 
@@ -191,6 +195,8 @@ private:
     struct DriveRt { int body = -1; Vec3 target; float maxForce = 0.f, freq = 12.f, damping = 1.f; };
     struct KinRt { int body = -1; Vec3 pos; Quat rot; };
     std::vector<DriveRt> drives_;
+    struct SteadyRt { int body = -1; Quat rot; float maxTorque = 0.f; };
+    std::vector<SteadyRt> steady_;
     std::vector<KinRt> kinematic_;
     std::vector<ConstraintHandle> joints_;
     float lastDt_ = static_cast<float>(kFixedDt);

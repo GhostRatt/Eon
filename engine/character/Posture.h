@@ -51,6 +51,7 @@ struct PostureParams {
     float fingerCurl[2] = {0.25f, 0.25f};           // 0 flat .. 1 fist (relaxed hands curl a little)
     float fingerSpread[2] = {0.f, 0.f};
     float thumbCurl[2] = {0.2f, 0.2f};
+    float indexCurl[2] = {-1.f, -1.f};             // >= 0: index finger on its own (pointing)
 };
 
 // Builds the full pose for this frame (resets to bind first). Call before soft tissue/limb collision.

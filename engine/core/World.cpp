@@ -149,7 +149,8 @@ void World::BuildEntity(Entity& e) {
     d.fastMoving = e.massKg > 0.f && std::min({he.x, he.y, he.z}) < 0.015f;
 
     const bool isButton = e.type == "button";
-    const bool isSwitch = e.type == "switch";
+    const bool isLever = e.type == "lever";      // a handle sticking out of a wall plate, thrown up/down
+    const bool isSwitch = e.type == "switch" || isLever;
     uint32_t group = 0;
     if (isButton || isSwitch) {
         group = physics_->NewGroup(2);
@@ -212,7 +213,7 @@ void World::BuildEntity(Entity& e) {
         s.axisLocal = p;
         s.hingeLocal = h;
         s.longLocal = u;
-        s.halfLong = 0.35f * ExtentAlong(he, u);
+        s.halfLong = 0.45f * ExtentAlong(he, u);   // rocker paddle nearly as long as the plate
         s.halfP = 0.006f;
         const float halfH = 0.4f * ExtentAlong(he, h);
         s.limit = P(e.params, "throw", 0.3f);
@@ -222,14 +223,16 @@ void World::BuildEntity(Entity& e) {
         const Vec3 Hw = rot.Rotate(h);
         const Vec3 pivot = e.pos + Pw * ExtentAlong(he, p);
         const bool closed = e.params.value("closed", false);
+        if (isLever) { s.limit = P(e.params, "throw", 0.6f); s.detent = P(e.params, "detent", 1.0f); }
         const float a0 = (closed ? 0.9f : -0.9f) * s.limit;
         const Quat q = Quat::AxisAngle(Hw, a0);
 
         BodyDesc ld;
-        ld.pos = pivot + q.Rotate(Pw * s.halfP);
+        const float handleHalf = 0.5f * P(e.params, "handle", 0.3f);
+        ld.pos = pivot + q.Rotate(Pw * (isLever ? handleHalf : s.halfP));
         ld.rot = (q * rot * Quat::FromBasis(u, p, h)).Normalized();
-        ld.halfExtent = {s.halfLong, s.halfP, halfH};
-        ld.mass = 0.05f;          // rocker + snap mechanism; too light and contact forces spin it wildly
+        ld.halfExtent = isLever ? Vec3{0.016f, handleHalf, 0.016f} : Vec3{s.halfLong, s.halfP, halfH};
+        ld.mass = P(e.params, "leverMass", isLever ? 0.4f : 0.05f);   // rocker + snap mechanism; too light and contact forces spin it wildly
         ld.angularDamping = 2.f;
         ld.group = group;
         ld.subGroup = 1;
@@ -451,6 +454,24 @@ void World::ApplyForces(float dt) {
     }
     pushes_.erase(std::remove_if(pushes_.begin(), pushes_.end(), [](const PushRt& p) { return p.body < 0; }), pushes_.end());
 
+    for (const SteadyRt& st : steady_) {
+        if (st.body < 0 || st.body >= (int)bodies_.size()) continue;
+        const BodyHandle h = bodies_[st.body].h;
+        if (!physics_->IsDynamic(h)) continue;
+        Vec3 p; Quat q;
+        physics_->GetTransform(h, p, q);
+        Quat d = (st.rot * q.Conjugate()).Normalized();
+        Vec3 axis; float ang;
+        d.ToAxisAngle(axis, ang);
+        if (ang > 3.14159265f) ang -= 6.2831853f;
+        const float I = physics_->GetMass(h) * 0.04f;   // rough box inertia (r ~ 0.2 m)
+        const float w = 10.f;
+        Vec3 tau = (axis * (ang * w * w) - physics_->GetAngularVelocity(h) * (2.f * w)) * I;
+        if (tau.Length() > st.maxTorque) tau = tau.Normalized() * st.maxTorque;
+        physics_->AddTorque(h, tau);
+        physics_->Wake(h);
+    }
+
     // Toggle switch detent: snaps the rocker to whichever side it is on.
     for (const SwitchRt& s : switches_) {
         const float a = physics_->HingeAngle(s.hinge);
@@ -616,6 +637,20 @@ void World::DebugActuate(int entityId, bool on) {
         pushes_.push_back(p);
         physics_->Wake(bodies_[s.lever].h);
     }
+}
+
+void World::SetSteady(int body, const Quat& rot, float maxTorque) {
+    for (SteadyRt& s : steady_) if (s.body == body) { s.rot = rot; s.maxTorque = maxTorque; return; }
+    steady_.push_back({body, rot, maxTorque});
+}
+
+void World::ClearSteady(int body) {
+    steady_.erase(std::remove_if(steady_.begin(), steady_.end(), [body](const SteadyRt& s) { return s.body == body; }), steady_.end());
+}
+
+float World::SwitchAngle(int entityId) const {
+    for (const SwitchRt& s : switches_) if (s.entity == entityId) return physics_->HingeAngle(s.hinge);
+    return 0.f;
 }
 
 const Part* World::PartOf(int entityId) const {

@@ -353,7 +353,7 @@ void Character::OrientHand(int i, const Vec3& palmIn, const Vec3& fingersIn, flo
     RotateBoneWorld(hb, Quat::AxisAngle(axis, ang));
 }
 
-void Character::PoseFingers(int i, float curl, float spread, float thumb) {
+void Character::PoseFingers(int i, float curl, float spread, float thumb, float indexCurl) {
     const HandFrame& h = hands_[i];
     if (!h.valid) return;
     const auto& F = rig_.finger[i];
@@ -361,7 +361,7 @@ void Character::PoseFingers(int i, float curl, float spread, float thumb) {
     const float jointK[3] = {1.35f, 1.65f, 1.1f};
     const float spreadK[5] = {0.f, 0.2f, 0.f, -0.14f, -0.28f};
     for (int k = 0; k < 5; ++k) {
-        const float c = k == 0 ? thumb : std::clamp(curl * (1.f + 0.06f * (k - 1)), -0.15f, 1.f);
+        const float c = k == 0 ? thumb : (k == 1 && indexCurl >= 0.f) ? indexCurl : std::clamp(curl * (1.f + 0.06f * (k - 1)), -0.15f, 1.f);
         for (int j = 0; j < 3; ++j) {
             const int b = F[k][j];
             if (b < 0) continue;

@@ -52,7 +52,7 @@ tz += [
     ent(23, "Wire_Red", "wire", (-0.2, 0.745, 0.15), (0.4, 0.006, 0.006), (200, 40, 40), mass=0.01, params={"length": 0.4}),
     ent(24, "Wire_Black1", "wire", (0.2, 0.745, 0.15), (0.4, 0.006, 0.006), (30, 30, 30), mass=0.01, params={"length": 0.4}),
     ent(25, "Wire_Black2", "wire", (0, 0.745, -0.05), (0.8, 0.006, 0.006), (30, 30, 30), mass=0.01, params={"length": 1.0}),
-    ent(30, "SpareBattery_9V", "battery", (0.55, 0.765, -0.25), (0.026, 0.048, 0.017), (30, 30, 30), mass=0.045,
+    ent(30, "SpareBattery_9V", "battery", (0.55, 0.765, 0.15), (0.026, 0.048, 0.017), (30, 30, 30), mass=0.045,
         params={"voltage": 9.0, "internalR": 1.5, "capacityAh": 0.5, "charge": 0.2}),
     # Room light: hidden battery -> switch by the door -> ceiling lamp
     ent(40, "RoomBattery_12V", "battery", (2.43, 1.0, 2.2), (0.06, 0.15, 0.1), (60, 60, 60),
@@ -63,9 +63,22 @@ tz += [
     ent(44, "RoomWireB", "wire", (1.2, 2.74, 0.9), (2.4, 0.01, 0.01), (180, 60, 40), params={"length": 3.5, "hidden": True}),
     ent(45, "RoomWireC", "wire", (1.2, 2.75, 1.1), (2.4, 0.01, 0.01), (40, 40, 40), params={"length": 4.5, "hidden": True}),
     ent(31, "SpareWire", "wire", (-0.5, 0.745, -0.25), (0.3, 0.006, 0.006), (40, 120, 200), mass=0.008, params={"length": 0.3}),
+    # A pull lever on the west wall that lights a lamp above it (hidden battery behind the wall)
+    ent(50, "LeverBattery_12V", "battery", (-2.43, 0.6, 0.5), (0.06, 0.15, 0.1), (60, 60, 60),
+        params={"voltage": 12.0, "internalR": 0.05, "capacityAh": 7.0, "hidden": True}),
+    ent(51, "WallLever", "lever", (-2.47, 1.15, 0.8), (0.04, 0.16, 0.1), (90, 90, 95),
+        params={"axis": [1, 0, 0], "handle": 0.3, "throw": 0.6, "detent": 1.0, "leverMass": 0.4}),
+    ent(52, "LeverLamp", "lamp", (-2.44, 1.9, 0.8), (0.08, 0.1, 0.08), (255, 230, 180), params={"ratedPower": 5.0, "ratedVoltage": 12.0}),
+    ent(53, "LeverWireA", "wire", (-2.56, 0.9, 0.65), (0.01, 0.4, 0.01), (180, 60, 40), params={"length": 0.6, "hidden": True}),
+    ent(54, "LeverWireB", "wire", (-2.56, 1.5, 0.8), (0.01, 0.6, 0.01), (180, 60, 40), params={"length": 0.8, "hidden": True}),
+    ent(55, "LeverWireC", "wire", (-2.57, 1.2, 0.6), (0.01, 1.2, 0.01), (40, 40, 40), params={"length": 1.8, "hidden": True}),
+    # Things to carry: a small crate (4 kg) and a light box
+    ent(60, "Crate", "dynamic", (-1.2, 0.15, -1.6), (0.4, 0.3, 0.3), (150, 110, 70), mass=4.0),
+    ent(61, "ShoeBox", "dynamic", (1.4, 0.06, -1.7), (0.3, 0.12, 0.18), (200, 190, 170), mass=0.6),
 ]
 tz_links = [[20, 0, 23, 0], [23, 1, 21, 0], [21, 1, 24, 0], [24, 1, 22, 0], [22, 1, 25, 0], [25, 1, 20, 1],
-            [40, 0, 43, 0], [43, 1, 41, 0], [41, 1, 44, 0], [44, 1, 42, 0], [42, 1, 45, 0], [45, 1, 40, 1]]
+            [40, 0, 43, 0], [43, 1, 41, 0], [41, 1, 44, 0], [44, 1, 42, 0], [42, 1, 45, 0], [45, 1, 40, 1],
+            [50, 0, 53, 0], [53, 1, 51, 0], [51, 1, 54, 0], [54, 1, 52, 0], [52, 1, 55, 0], [55, 1, 50, 1]]
 
 for fname, name, ents, links in [("waiting_area.json", "Waiting Area", wa, wa_links), ("test_zone_01.json", "Test Zone 01", tz, tz_links)]:
     with open(f"{out}/{fname}", "w") as f:

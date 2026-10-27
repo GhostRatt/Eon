@@ -10,7 +10,8 @@ namespace {
 
 constexpr float kPi = 3.14159265358979f;
 constexpr float kPalm = 0.08f;
-constexpr float kWristUp = 0.05f;   // wrist joint above the surface when the palm is flat on it
+constexpr float kWristUp = 0.05f;
+constexpr float kFingerTip = 0.07f;   // index fingertip beyond the palm center when pointing   // wrist joint above the surface when the palm is flat on it
 
 float WrapAngle(float a) {
     while (a > kPi) a -= 2.f * kPi;
@@ -120,6 +121,11 @@ int HeadSign(Stance s) {
 
 } // namespace
 
+Vec3 Motor::LocalToWorld(const Vec3& l) const {
+    // x = her left, y = up, z = forward, from the point between her feet
+    return pos_ + Quat::AxisAngle({0, 1, 0}, yaw_).Rotate(Vec3{l.x, l.y, l.z});
+}
+
 float Motor::StanceSpeed(Stance s) const {
     switch (s) {
     case Stance::Stand: return maxSpeed;
@@ -130,9 +136,22 @@ float Motor::StanceSpeed(Stance s) const {
     }
 }
 
+bool Motor::Ray(const World& world, const Vec3& from, const Vec3& dir, float len, RayHit& out) const {
+    Vec3 o = from;
+    float used = 0.f;
+    for (int k = 0; k < 4; ++k) {
+        if (!world.RayCast(o, dir, len - used, out, true)) return false;
+        if (out.body != held_[0] && out.body != held_[1]) { out.dist += used; return true; }
+        used += out.dist + 0.01f;
+        o = out.point + dir * 0.01f;
+        if (used >= len) return false;
+    }
+    return false;
+}
+
 float Motor::GroundAt(World& world, const Vec3& p, Vec3* normal) const {
     RayHit g;
-    if (world.RayCast(Vec3{p.x, p.y + 0.6f, p.z}, {0, -1, 0}, 2.0f, g, true)) {
+    if (Ray(world, Vec3{p.x, p.y + 0.6f, p.z}, {0, -1, 0}, 2.0f, g)) {
         if (normal) *normal = world.SurfaceNormal(g.body, g.point);
         return g.point.y;
     }
@@ -206,6 +225,13 @@ void Motor::EnsureBodies(Character& ch, World& world) {
         const int hb = ch.Rig().hand[i];
         h.pos = hb >= 0 ? ch.BonePos(hb) : pos_ + Vec3{i == 0 ? 0.2f : -0.2f, 0.8f, 0};
         hand_[i] = world.AddAgentBody(h);
+        BodyDesc f = h;
+        f.radius = 0.009f;
+        f.halfHeight = 0.004f;
+        f.mass = 0.2f;               // effective mass of the finger with the hand behind it
+        f.friction = 1.f;
+        f.angularDamping = 40.f;     // a fingertip doesn't roll
+        tip_[i] = world.AddAgentBody(f);
         restHand_[i] = h.pos;
         joint_[i] = -1;
         held_[i] = -1;
@@ -382,7 +408,11 @@ void Motor::StepLocomotion(Character& ch, World& world, const MotorIntent& in, f
         vel_ = {};
         if (climbT_ >= 1.f) climbing_ = false;
     } else {
-        const float stanceMax = trans_ < 1.f ? 0.f : StanceSpeed(stance_);
+        // carrying: heavier loads slow her down (a 4 kg crate ~15%, 20 kg ~half speed)
+        fb_.load = 0.f;
+        for (int i = 0; i < 2; ++i) if (held_[i] >= 0 && !(i == 1 && held_[1] == held_[0])) fb_.load += world.BodyMass(held_[i]);
+        const float loadK = std::clamp(1.f - fb_.load / 40.f, 0.35f, 1.f);
+        const float stanceMax = trans_ < 1.f ? 0.f : StanceSpeed(stance_) * loadK;
         Vec3 want = Flat(in.moveDir);
         const float wl = want.Length();
         if (wl > 1.f) want = want * (1.f / wl);
@@ -405,7 +435,7 @@ void Motor::StepLocomotion(Character& ch, World& world, const MotorIntent& in, f
                 const float h = low ? lowHeights[k] : heights[k];
                 RayHit hit;
                 const float reach = speed * dt + (low ? 0.5f : bodyRadius);
-                if (world.RayCast(pos_ + Vec3{0, h, 0}, dir, reach, hit, true)) {
+                if (Ray(world, pos_ + Vec3{0, h, 0}, dir, reach, hit)) {
                     const float m = world.BodyMass(hit.body);
                     if (m <= 0.f || m > 25.f) {
                         const float into = vel_.Dot(dir);
@@ -454,10 +484,16 @@ void Motor::UpdateHands(Character& ch, World& world, const MotorIntent& in, floa
         const Vec3 hp = world.BodyPosition(hand_[i]);
         reaching_[i] = h.reach;
         gripWant_[i] = h.grip;
-        reachTarget_[i] = h.target;
+        shape_[i] = h.shape;
+        reachTarget_[i] = h.local ? LocalToWorld(h.target) : h.target;
 
         // where the hand should go, limited to what the arm can reach
-        Vec3 target = h.reach && !climbing_ ? h.target : restHand_[i];
+        Vec3 target = h.reach && !climbing_ ? reachTarget_[i] : restHand_[i];
+        // just let go of something: draw the hand back toward the body first (don't drop it onto what she let go of)
+        if (!h.reach && withdraw_[i] > 0.f) { target = withdrawTo_[i]; withdraw_[i] -= dt; }
+        // pressing with a pointed finger: the fingertip goes to the target, so the palm stops ~7 cm short
+        const float tip = h.reach && h.shape == HandShape::Point ? kFingerTip : 0.f;
+        if (r.upperarm[i] >= 0 && tip > 0.f) target = target - (target - ch.BonePos(r.upperarm[i])).Normalized() * tip;
         if (r.upperarm[i] >= 0 && r.lowerarm[i] >= 0 && r.hand[i] >= 0) {
             const Vec3 sh = ch.BonePos(r.upperarm[i]);
             // arm + palm: the physical hand is the palm, ~8 cm past the wrist bone
@@ -470,8 +506,19 @@ void Motor::UpdateHands(Character& ch, World& world, const MotorIntent& in, floa
         const bool planted = stance_ == Stance::Crawl || stance_ == Stance::Prone || stance_ == Stance::Sit || climbing_;
         const float strength = h.reach ? std::max(10.f, armStrength * std::clamp(h.effort, 0.f, 1.f)) : planted ? 60.f : 25.f;
         // holding something heavy: the muscle has to carry its weight too
-        const float carry = held_[i] >= 0 ? world.BodyMass(held_[i]) * 9.81f : 0.f;
-        world.SetDrive(hand_[i], target + Vec3{0, held_[i] >= 0 ? 0.f : 0.f, 0}, strength + carry, h.reach ? 7.f : 5.f, 1.f);
+        // two hands on the same thing share its weight
+        const int hands = held_[i] >= 0 && held_[1 - i] == held_[i] ? 2 : 1;
+        const float carry = held_[i] >= 0 ? world.BodyMass(held_[i]) * 9.81f / hands : 0.f;
+        world.SetDrive(hand_[i], target, strength + carry, h.reach ? 7.f : 5.f, 1.f);
+        // fingertip: leads the palm when pointing, otherwise rides inside the palm
+        if (tip_[i] >= 0) {
+            if (tip > 0.f && r.upperarm[i] >= 0) {
+                const Vec3 dir = (reachTarget_[i] - ch.BonePos(r.upperarm[i])).Normalized();
+                world.SetDrive(tip_[i], target + dir * tip, strength * 0.8f, 15.f, 1.f);
+            } else {
+                world.SetDrive(tip_[i], hp, 15.f, 10.f, 1.f);
+            }
+        }
 
         // fingers: close on whatever the palm is touching
         if (h.grip && joint_[i] < 0) {
@@ -496,14 +543,28 @@ void Motor::UpdateHands(Character& ch, World& world, const MotorIntent& in, floa
                 joint_[i] = world.Attach(hand_[i], best.body, best.point);
                 held_[i] = best.body;
                 slip_[i] = 0;
+                holdRel_[i] = (Quat::AxisAngle({0, 1, 0}, yaw_).Conjugate() * world.BodyRotation(best.body)).Normalized();
             }
         } else if (!h.grip && joint_[i] >= 0) {
+            if (held_[1 - i] != held_[i]) world.ClearSteady(held_[i]);
             world.Detach(joint_[i]);
             joint_[i] = held_[i] = -1;
+            const Vec3 sh = r.upperarm[i] >= 0 ? ch.BonePos(r.upperarm[i]) : pos_ + Vec3{0, 1.3f, 0};
+            withdrawTo_[i] = hp + (sh - hp).Normalized() * 0.12f + Vec3{0, 0.04f, 0};
+            withdraw_[i] = 0.35f;
         }
         if (joint_[i] >= 0) {
             slip_[i] = world.JointForce(joint_[i]) > gripStrength ? slip_[i] + 1 : 0;
-            if (slip_[i] > 8) { world.Detach(joint_[i]); joint_[i] = held_[i] = -1; }
+            if (slip_[i] > 8) {
+                if (held_[1 - i] != held_[i]) world.ClearSteady(held_[i]);
+                world.Detach(joint_[i]); joint_[i] = held_[i] = -1;
+            }
+        }
+        // wrists keep what she holds from flopping around: firm with two hands, a little with one
+        // (a static thing she holds onto — a ledge, a lever's base — doesn't care)
+        if (joint_[i] >= 0 && (held_[1 - i] != held_[i] || i == 0)) {
+            const bool both = held_[1 - i] == held_[i];
+            world.SetSteady(held_[i], (Quat::AxisAngle({0, 1, 0}, yaw_) * holdRel_[i]).Normalized(), both ? 10.f : 0.6f);
         }
 
         fb_.holding[i] = joint_[i] >= 0;
@@ -959,7 +1020,7 @@ void Motor::PostPhysics(Character& ch, World& world, PostureParams base, float d
     if (stance_ == Stance::Stand || stance_ == Stance::Crouch) {
         for (int i = 0; i < 2; ++i) {
             if (!reaching_[i]) continue;
-            wantLean = std::max(wantLean, lean_ + deficit_[i] * 4.f);
+            wantLean = std::max(wantLean, lean_ + deficit_[i] * 4.f - 0.04f);   // bend only as far as needed
             const Vec3 d = Flat(world.BodyPosition(hand_[i]) - pos_);
             if (d.Length() > 0.05f) wantTwist = std::clamp(std::atan2(F.Cross(d.Normalized()).y, F.Dot(d.Normalized())) * 0.4f, -0.5f, 0.5f);
         }
@@ -975,6 +1036,17 @@ void Motor::PostPhysics(Character& ch, World& world, PostureParams base, float d
         float curl = 0.3f, spread = 0.1f, thumb = 0.25f;
         if (joint_[i] >= 0) { curl = 0.8f; spread = 0.f; thumb = 0.75f; }
         else if (reaching_[i] && gripWant_[i]) { curl = 1.f; spread = 0.f; thumb = 0.9f; }   // closing on nothing: a fist
+        else if (reaching_[i] && shape_[i] == HandShape::Fist) { curl = 1.f; spread = 0.f; thumb = 0.9f; }
+        else if (reaching_[i] && shape_[i] == HandShape::Point) {
+            curl = 0.95f; spread = 0.f; thumb = 0.75f;
+            const Vec3 sh = ch.BonePos(r.upperarm[i]);
+            const Vec3 dir = (reachTarget_[i] - sh).Normalized(F);
+            // fingertip leads: palm faces down/sideways, finger along the push
+            base.orientHand[i] = true;
+            base.fingerDir[i] = dir;
+            base.palmNormal[i] = (U * -1.f - dir * dir.Dot(U * -1.f)).Normalized(L * (i == 0 ? -1.f : 1.f));
+            base.orientWeight[i] = 0.9f;
+        }
         else if (reaching_[i]) {
             curl = 0.06f; spread = 0.35f; thumb = 0.1f;
             const Vec3 sh = ch.BonePos(r.upperarm[i]);
@@ -993,6 +1065,7 @@ void Motor::PostPhysics(Character& ch, World& world, PostureParams base, float d
         base.fingerCurl[i] = curl_[i];
         base.fingerSpread[i] = spread_[i];
         base.thumbCurl[i] = thumb_[i];
+        base.indexCurl[i] = reaching_[i] && shape_[i] == HandShape::Point && !gripWant_[i] ? 0.02f : -1.f;
     }
 
     ApplyPosture(ch, base);

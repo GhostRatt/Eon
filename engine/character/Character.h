@@ -82,7 +82,7 @@ public:
     // Turns the hand so the palm faces `palm` with fingers toward `fingers` (weight 0..1, wrist limited to maxRad).
     void OrientHand(int side, const Vec3& palm, const Vec3& fingers, float weight = 1.f, float maxRad = 1.9f);
     // curl 0 flat .. 1 fist; spread 0..1 fingers apart; thumb 0 out .. 1 across the palm.
-    void PoseFingers(int side, float curl, float spread, float thumb);
+    void PoseFingers(int side, float curl, float spread, float thumb, float indexCurl = -1.f);   // indexCurl >= 0: pointing
     bool HasFingers(int side) const { return hands_[side].valid; }
 
     // Skin points of each foot (heel, sole, toes, instep) in their bone's frame, for floor contact.

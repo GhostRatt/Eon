@@ -10,9 +10,13 @@ namespace eon {
 
 // Motor primitives: the ONLY way Jenny acts on the world. Everything is expressed as body movement
 // (where to step, where to put a hand, whether to close the fingers). There is no "use object" command.
+enum class HandShape : int { Auto, Open, Point, Fist };
+
 struct HandIntent {
-    bool reach = false;        // move the hand toward `target` (world point)
-    Vec3 target;
+    bool reach = false;        // move the hand toward `target`
+    Vec3 target;               // world point, or (local = true) relative to her feet/facing: x left, y up, z forward
+    bool local = false;        // target moves with her body (carrying something while walking)
+    HandShape shape = HandShape::Auto;   // Point: press with the index fingertip
     bool grip = false;         // close the hand: grabs whatever the palm is touching
     float effort = 0.5f;       // 0..1 of max arm strength (pressing harder, lifting heavier)
 };
@@ -45,6 +49,7 @@ struct MotorFeedback {
     Stance stance = Stance::Stand;   // current (or the one she is moving out of)
     bool inTransition = false;
     bool noSeat = false;             // tried to sit down but there is nothing behind her to sit on
+    float load = 0.f;                // kg she is carrying (slows her down)
 };
 
 class Motor {
@@ -60,6 +65,8 @@ public:
     Vec3 Position() const { return pos_; }
     void Teleport(Character& ch, const Vec3& pos, float yaw);
     int HandBody(int i) const { return hand_[i]; }
+    int HeldBody(int i) const { return held_[i]; }
+    int TipBody(int i) const { return tip_[i]; }
     float Lean() const { return lean_; }
     Stance CurrentStance() const { return stance_; }
     bool Lying() const { return stance_ == Stance::Prone || stance_ == Stance::LieBack || stance_ == Stance::LieLeft || stance_ == Stance::LieRight; }
@@ -100,12 +107,18 @@ private:
     void GaitFeet(Character& ch, World& world, float dt, float stride, float lift, Vec3 out[2]);
     static Targets Blend(const Targets& a, const Targets& b, float w);
     float GroundAt(World& world, const Vec3& p, Vec3* normal = nullptr) const;
+    // a ray that passes through whatever she is holding (her feet don't step onto the box in her arms)
+    bool Ray(const World& world, const Vec3& from, const Vec3& dir, float len, RayHit& out) const;
     float StanceSpeed(Stance s) const;
     Dims dims_;
 
     int generation_ = -1;
     int torso_ = -1;
     std::array<int, 2> hand_{-1, -1};
+    std::array<int, 2> tip_{-1, -1};          // index fingertip: a small body that presses small things when pointing
+    std::array<float, 2> withdraw_{};
+    std::array<Vec3, 2> withdrawTo_{};
+    std::array<Quat, 2> holdRel_{};           // held thing's orientation relative to her facing when grabbed
     std::array<int, 2> joint_{-1, -1};
     std::array<int, 2> held_{-1, -1};
     std::array<Vec3, 2> restHand_{};
@@ -113,6 +126,8 @@ private:
     std::array<bool, 2> reaching_{};
     std::array<bool, 2> gripWant_{};
     std::array<Vec3, 2> reachTarget_{};
+    std::array<HandShape, 2> shape_{};
+    Vec3 LocalToWorld(const Vec3& local) const;
     std::array<float, 2> curl_{0.25f, 0.25f}, spread_{}, thumb_{0.2f, 0.2f};
     float lean_ = 0.f, twist_ = 0.f;
     std::array<float, 2> deficit_{};   // how much further the hand needs to go than the arm reaches (m)

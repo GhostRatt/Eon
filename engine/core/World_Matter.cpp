@@ -62,10 +62,24 @@ void World::BuildMatter(Entity& e, int main) {
         f.grams = f.left = P(q, "grams", std::max(1.f, e.massKg * 1000.f));
         f.kcalPerG = P(q, "kcalPerG", 0.52f);    // apple-ish
         f.waterPerG = P(q, "waterPerG", 0.85f);
+        f.residue = P(q, "residue", 0.1f);     // indigestible share of the dry matter (fiber, skin, husk)
         f.size = e.size;
+        // voxel block, ~12 across its longest side (6 mm cells on an apple: a bite reads as a bite)
+        const float big = std::max({e.size.x, e.size.y, e.size.z});
+        auto cells = [&](float s) { return std::clamp(static_cast<int>(std::lround(12.f * s / big)), 2, 12); };
+        f.nx = cells(e.size.x); f.ny = cells(e.size.y); f.nz = cells(e.size.z);
+        f.vox.assign(static_cast<size_t>(f.nx * f.ny * f.nz), 1);
+        f.gPerVox = f.grams / static_cast<float>(f.vox.size());
+        f.skin = e.color;
+        if (q.contains("inside") && q["inside"].is_array())
+            f.flesh = {q["inside"][0].get<unsigned char>(), q["inside"][1].get<unsigned char>(), q["inside"][2].get<unsigned char>()};
+        else   // most food is pale cream inside (apple flesh, bread crumb), tinted a little by its skin
+            f.flesh = {static_cast<unsigned char>(e.color.r / 4 + 180), static_cast<unsigned char>(e.color.g / 4 + 172), static_cast<unsigned char>(e.color.b / 4 + 142)};
         foods_.push_back(f);
     } else if (e.type == "heater") {
         heaters_.push_back({e.id, main});
+    } else if (e.type == "stool") {
+        stools_.push_back({e.id, main, static_cast<float>(P(q, "grams", e.massKg * 1000.f)), false});
     }
 }
 
@@ -235,7 +249,7 @@ void World::StepMatter(float dt) {
     // drains (a flushed toilet, a pulled plug)
     for (ContainerRt& c : containers_)
         if (c.drain > 0 && ValveOpen(c.drain))
-            for (float& m : c.ml) m = std::max(0.f, m - 400.f * dt);
+            for (float& m : c.ml) m = std::max(0.f, m - 400.f * dt), c.stoolG = 0.f;
     // puddles evaporate (faster when there's more surface)
     for (PuddleRt& q : puddles_) {
         const float tot = Total(q.ml);
@@ -243,6 +257,18 @@ void World::StepMatter(float dt) {
         for (float& m : q.ml) m = std::max(0.f, m - loss * (tot > 0 ? m / tot : 0.f));
     }
     puddles_.erase(std::remove_if(puddles_.begin(), puddles_.end(), [](const PuddleRt& q) { return Total(q.ml) < 0.05f; }), puddles_.end());
+    // a flush takes stool in the bowl away with the water
+    for (ContainerRt& c : containers_) {
+        if (c.drain <= 0 || !ValveOpen(c.drain)) continue;
+        Vec3 cp; Quat cq;
+        physics_->GetTransform(bodies_[c.body].h, cp, cq);
+        for (StoolRt& s : stools_) {
+            if (s.gone) continue;
+            const Vec3 l = cq.Conjugate().Rotate(BodyPosition(s.body) - cp);
+            if (std::fabs(l.x) < c.half.x && std::fabs(l.z) < c.half.z && l.y < c.half.y + 0.02f && l.y > -c.half.y - 0.02f) s.gone = true;
+        }
+    }
+    for (StoolRt& s : stools_) if (s.gone) physics_->SetTransform(bodies_[s.body].h, Vec3{1000.f + s.entity, -600.f, 0.f}, Quat{});
     // eaten food is gone from the world
     for (FoodRt& f : foods_) if (f.gone) physics_->SetTransform(bodies_[f.body].h, Vec3{1000.f + f.entity, -500.f, 0.f}, Quat{});
 }
@@ -256,12 +282,43 @@ float World::Bite(const Vec3& mouth, float reach) {
         if (d < reach && d < bd) { bd = d; best = &f; }
     }
     if (!best) return 0.f;
-    const float g = std::min(best->left, 12.f);   // a bite
-    best->left -= g;
+    FoodRt& f = *best;
+    // the bite comes out of the side her mouth is on: the voxels nearest her teeth, ~12 g worth (a real bite)
+    Vec3 fp; Quat fq;
+    physics_->GetTransform(bodies_[f.body].h, fp, fq);
+    const Vec3 m = fq.Conjugate().Rotate(mouth - fp);
+    const Vec3 cell{f.size.x / f.nx, f.size.y / f.ny, f.size.z / f.nz};
+    auto center = [&](int x, int y, int z) { return Vec3{(x + 0.5f) * cell.x - 0.5f * f.size.x, (y + 0.5f) * cell.y - 0.5f * f.size.y, (z + 0.5f) * cell.z - 0.5f * f.size.z}; };
+    auto at = [&](int x, int y, int z) -> uint8_t& { return f.vox[static_cast<size_t>((z * f.ny + y) * f.nx + x)]; };
+    std::vector<std::pair<float, int>> near;
+    for (int z = 0; z < f.nz; ++z)
+        for (int y = 0; y < f.ny; ++y)
+            for (int x = 0; x < f.nx; ++x)
+                if (at(x, y, z)) { const Vec3 d = center(x, y, z) - m; near.push_back({d.Dot(d), (z * f.ny + y) * f.nx + x}); }
+    std::sort(near.begin(), near.end());
+    const int want = std::max(1, static_cast<int>(std::lround(std::min(f.left, 12.f) / f.gPerVox)));
+    int took = 0;
+    for (const auto& [d2, idx] : near) {
+        if (took >= want) break;
+        f.vox[static_cast<size_t>(idx)] = 0;
+        ++took;
+        // what's under it is now open to the air: flesh shows
+        const int x = idx % f.nx, y = (idx / f.nx) % f.ny, z = idx / (f.nx * f.ny);
+        const int nb[6][3] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+        for (const auto& o : nb) {
+            const int a = x + o[0], b = y + o[1], c = z + o[2];
+            if (a >= 0 && b >= 0 && c >= 0 && a < f.nx && b < f.ny && c < f.nz && at(a, b, c) == 1) at(a, b, c) = 2;
+        }
+    }
+    const float g = std::min(f.left, took * f.gPerVox);
+    f.left -= g;
+    ++f.bites;
     intake_.foodG += g;
-    intake_.kcal += g * best->kcalPerG;
-    intake_.ml[int(Liquid::Water)] += g * best->waterPerG;
-    if (best->left < 2.f) best->gone = true;
+    intake_.kcal += g * f.kcalPerG;
+    intake_.ml[int(Liquid::Water)] += g * f.waterPerG;
+    intake_.foodDryG += g * (1.f - f.waterPerG);
+    intake_.residueG += g * (1.f - f.waterPerG) * f.residue;
+    if (f.left < 1.f) f.gone = true;   // the last scrap is swallowed with the bite
     return g;
 }
 
@@ -279,6 +336,44 @@ float World::PuddleMl(Liquid l) const {
 
 int World::PuddleCount() const { return static_cast<int>(puddles_.size()); }
 
+int World::FoodBites(int entityId) const {
+    for (const FoodRt& f : foods_) if (f.entity == entityId) return f.bites;
+    return 0;
+}
+
+int World::SpawnStool(const Vec3& pos, const Vec3& vel, float grams) {
+    if (grams < 1.f) return 0;
+    // it drops: into a bowl right below (into its water), or onto whatever is there
+    RayHit hit;
+    const bool below = RayCast(pos, {0, -1, 0}, 1.5f, hit, true);
+    if (below)
+        for (ContainerRt& c : containers_)
+            if (c.entity == hit.entity) { c.stoolG += grams; return c.entity; }
+    Entity e;
+    e.type = "stool";
+    e.name = "stool";
+    // a soft log ~2.5 cm thick, as long as its mass makes it (density ~1.05 g/cm3)
+    const float len = std::clamp(grams / (2.5f * 2.5f * 1.05f) / 100.f, 0.015f, 0.16f);
+    e.size = {0.025f, 0.025f, len};
+    e.pos = below ? hit.point + Vec3{0, 0.016f, 0} : pos;
+    e.rotDeg = {0, std::atan2(vel.x, vel.z) * 57.29578f, 0};
+    e.massKg = grams / 1000.f;
+    e.color = {110, 72, 40};
+    e.params = {{"material", "soft"}, {"grams", grams}};
+    return Spawn(e);
+}
+
+float World::ContainerStoolG(int entityId) const {
+    for (const ContainerRt& c : containers_) if (c.entity == entityId) return c.stoolG;
+    return 0.f;
+}
+
+int World::StoolCount() const {
+    int n = 0;
+    for (const StoolRt& s : stools_) n += !s.gone;
+    return n;
+}
+
 float World::FoodLeftG(int entityId) const {
     for (const FoodRt& f : foods_) if (f.entity == entityId) return f.gone ? 0.f : f.left;
     return 0.f;
@@ -286,17 +381,59 @@ float World::FoodLeftG(int entityId) const {
 
 void World::AppendMatterPieces(RenderFrame& out) const {
     const Rgb water{120, 165, 215}, urine{220, 200, 95};
-    // food shrinks as it's eaten; eaten food is gone
+    // bitten food is drawn voxel by voxel (runs along x), with the bite marks open to its flesh; eaten food is gone
     for (const FoodRt& f : foods_) {
-        const float k = std::cbrt(std::max(0.f, f.left / f.grams));
+        if (!f.gone && f.bites == 0) continue;
+        RenderPiece base;
+        bool found = false;
         for (size_t i = 0; i < out.pieces.size();) {
-            if (out.pieces[i].entity == f.entity) {
-                if (f.gone) { out.pieces.erase(out.pieces.begin() + i); continue; }
-                out.pieces[i].size = out.pieces[i].size * k;
-            }
+            if (out.pieces[i].entity == f.entity) { base = out.pieces[i]; found = true; out.pieces.erase(out.pieces.begin() + i); continue; }
             ++i;
         }
+        if (!found || f.gone) continue;
+        const Vec3 cell{f.size.x / f.nx, f.size.y / f.ny, f.size.z / f.nz};
+        for (int z = 0; z < f.nz; ++z)
+            for (int y = 0; y < f.ny; ++y)
+                for (int x = 0; x < f.nx;) {
+                    const uint8_t v = f.vox[static_cast<size_t>((z * f.ny + y) * f.nx + x)];
+                    if (!v) { ++x; continue; }
+                    int x1 = x;
+                    while (x1 + 1 < f.nx && f.vox[static_cast<size_t>((z * f.ny + y) * f.nx + x1 + 1)] == v) ++x1;
+                    // runs buried inside (all around them still there) can't be seen: skip them
+                    auto solid = [&](int a, int b, int c) { return a >= 0 && b >= 0 && c >= 0 && a < f.nx && b < f.ny && c < f.nz && f.vox[static_cast<size_t>((c * f.ny + b) * f.nx + a)]; };
+                    bool hidden = solid(x - 1, y, z) && solid(x1 + 1, y, z);
+                    for (int xi = x; xi <= x1 && hidden; ++xi) hidden = solid(xi, y - 1, z) && solid(xi, y + 1, z) && solid(xi, y, z - 1) && solid(xi, y, z + 1);
+                    if (hidden) { x = x1 + 1; continue; }
+                    RenderPiece rp = base;
+                    const Vec3 c{(0.5f * (x + x1 + 1)) * cell.x - 0.5f * f.size.x, (y + 0.5f) * cell.y - 0.5f * f.size.y, (z + 0.5f) * cell.z - 0.5f * f.size.z};
+                    rp.pos = base.pos + base.rot.Rotate(c);
+                    rp.size = {cell.x * (x1 - x + 1), cell.y, cell.z};
+                    rp.color = v == 2 ? f.flesh : f.skin;
+                    out.pieces.push_back(rp);
+                    x = x1 + 1;
+                }
     }
+    // stool in a bowl: a few brown lumps at the bottom of its water
+    for (const ContainerRt& c : containers_) {
+        if (c.stoolG < 1.f) continue;
+        Vec3 cp; Quat cq;
+        physics_->GetTransform(bodies_[c.body].h, cp, cq);
+        const int n = std::clamp(static_cast<int>(c.stoolG / 40.f) + 1, 1, 5);
+        const float len = std::clamp(c.stoolG / n / (2.5f * 2.5f * 1.05f) / 100.f, 0.015f, 0.16f);
+        for (int k = 0; k < n; ++k) {
+            RenderPiece rp;
+            rp.pos = cp + cq.Rotate(Vec3{(k - 0.5f * (n - 1)) * 0.03f, c.half.y + 0.004f, 0.02f * ((k % 2) ? 1.f : -1.f)});
+            rp.rot = cq * Quat::AxisAngle({0, 1, 0}, 0.7f * k);
+            rp.size = {0.024f, 0.024f, len};
+            rp.color = {110, 72, 40};
+            rp.entity = c.entity;
+            out.pieces.push_back(rp);
+        }
+    }
+    // stool: soft, brown, slightly irregular
+    for (const StoolRt& s : stools_)
+        for (RenderPiece& rp : out.pieces)
+            if (rp.entity == s.entity && s.gone) rp.size = {0, 0, 0};
     // heaters glow when they draw power
     for (const HeaterRt& h : heaters_) {
         const Part* part = PartOf(h.entity);

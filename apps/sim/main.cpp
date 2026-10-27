@@ -230,10 +230,10 @@ struct Body {
         // drinking, biting, peeing (asleep: nothing)
         {
             MotorIntent mi = intent;
-            if (state.asleep) { mi.mouth = MouthAction::Closed; mi.pee = false; }
+            if (state.asleep) { mi.mouth = MouthAction::Closed; mi.pee = false; mi.poop = false; }
             matter.Step(world, ch, motor, mi, state, wardrobe.Covers("groin"), dt);
             felt.drankMl += matter.Feel().drankMl; felt.biteG += matter.Feel().biteG;
-            felt.chewing |= matter.Feel().chewing; felt.peeing |= matter.Feel().peeing;
+            felt.chewing |= matter.Feel().chewing; felt.peeing |= matter.Feel().peeing; felt.pooping |= matter.Feel().pooping;
             if (matter.Jaw() > 0.01f) ch.SetMorph("jawOpen", std::max(ch.GetMorph("jawOpen"), matter.Jaw()));
         }
 
@@ -356,6 +356,7 @@ int main(int argc, char** argv) {
     std::string demoArg;
     std::string memoryArg, mindOut;
     bool showMindArg = false;
+    std::vector<std::string> biteArgs;
     std::vector<std::string> actuateArgs;   // --actuate NAME: hold/flip a button, switch or lever (operator test)   // --memory DIR (persistent memory), --mind-out DIR (write report/html after settle)   // --demo switch|lever|crate|battery: scripted hand use (same moves the tests check)
     std::string sayArg;
     float spawn[3] = {0, 0, 0}, reachR[3] = {0, 0, 0}, walkTo[2] = {0, 0};
@@ -388,6 +389,7 @@ int main(int argc, char** argv) {
         else if (arg == "--mind-out" && a + 1 < argc) mindOut = argv[++a];
         else if (arg == "--show-mind") showMindArg = true;
         else if (arg == "--actuate" && a + 1 < argc) actuateArgs.push_back(argv[++a]);
+        else if (arg == "--bite" && a + 1 < argc) biteArgs.push_back(argv[++a]);   // operator: take 3 bites out of a food (see the marks)
         else if (arg == "--cam" && a + 6 < argc) { for (float& c : cam) c = std::stof(argv[++a]); customCam = true; }
         else zonePath = arg;
     }
@@ -445,6 +447,13 @@ int main(int argc, char** argv) {
     for (const std::string& nm : actuateArgs)
         for (const Entity& e : world.GetZone().entities)
             if (e.name == nm) world.DebugActuate(e.id, true);
+    for (const std::string& nm : biteArgs)
+        for (const Entity& e : world.GetZone().entities)
+            if (e.name == nm) {
+                const Vec3 c = world.BodyPosition(world.MainBodyOf(e.id));
+                for (const Vec3& d : {Vec3{0.06f, 0.01f, 0.f}, Vec3{0.05f, 0.02f, 0.035f}, Vec3{0.f, 0.06f, 0.02f}}) world.Bite(c + d);
+                world.TakeIntake();   // the operator's bites don't feed anyone
+            }
     if (settle > 0.f) {
         for (float t = 0; t < settle; t += 1 / 60.f) {
             for (const auto& [at, st] : stanceSeq) if (t >= at && t < at + 1 / 60.f) body->intent.stance = static_cast<Stance>(st);
@@ -535,11 +544,12 @@ int main(int argc, char** argv) {
         body->intent.climb = IsKeyDown(KEY_SPACE) || climbArg;
         if (IsKeyPressed(KEY_O)) body->lips.Say("Hello? Is anyone there? I don't know how I got here.");
         if (IsKeyPressed(KEY_N)) body->showMind = !body->showMind;
-        // her mouth and bladder: I open mouth (toggle), B bite (hold), L pee (hold)
+        // her mouth, bladder and bowels: I open mouth (toggle), B bite (hold), L pee (hold), ; poop (hold)
         if (IsKeyPressed(KEY_I)) body->intent.mouth = body->intent.mouth == MouthAction::Open ? MouthAction::Closed : MouthAction::Open;
         if (IsKeyDown(KEY_B)) body->intent.mouth = MouthAction::Bite;
         else if (IsKeyReleased(KEY_B)) body->intent.mouth = MouthAction::Closed;
         body->intent.pee = IsKeyDown(KEY_L);
+        body->intent.poop = IsKeyDown(KEY_SEMICOLON);
         if (IsKeyPressed(KEY_F9)) { body->SaveMind(memoryArg.empty() ? "mind_out" : memoryArg); status = "Jenny's memory written (html, report, context)"; }
         if (IsKeyPressed(KEY_V)) for (auto& h : body->intent.hands) if (h.reach) h.target = h.target + Vec3{0, 0.25f, 0};   // lift
 
@@ -569,7 +579,7 @@ int main(int argc, char** argv) {
                 for (size_t g = 0; g < body->wardrobe.garments.size() && g < 6; ++g)
                     wr += TextFormat("%d:%s%s  ", (int)g + 3, body->wardrobe.garments[g].name.c_str(), body->wardrobe.garments[g].worn ? "*" : "");
                 const int x = GetScreenWidth() - 470;
-                DrawRectangle(x - 8, 8, 462, 150, Fade(BLACK, 0.6f));
+                DrawRectangle(x - 8, 8, 462, 172, Fade(BLACK, 0.6f));
                 DrawText(TextFormat("air %.0fC  core %.2fC  sweat %.2f  shiver %.2f", ambient(), st.coreC, st.sweat, st.shiver), x, 14, 16, RAYWHITE);
                 DrawText(TextFormat("breath %.0f/min  heart %.0f bpm  mood %.0f", st.breathRate * 60.f, st.heartRate, st.mood), x, 34, 16, RAYWHITE);
                 DrawText(TextFormat("tired %.0f hungry %.0f thirst %.0f bladder %.0f", st.Get(Need::Fatigue), st.Get(Need::Hunger),
@@ -582,6 +592,8 @@ int main(int argc, char** argv) {
                     DrawText(TextFormat("air %.1fC  bladder %.0fml (+%.0f)  skin wet %.2f%s%s%s%s", world.AirTemperature(body->motor.Position() + Vec3{0, 1.f, 0}),
                                         st.BladderMl(), st.absorbing, st.skinWater, bf.drankMl > 0 ? "  DRINKING" : "", bf.chewing ? "  CHEWING" : "",
                                         bf.peeing ? "  PEEING" : "", bf.soakedClothes ? " (in underwear)" : ""), x, 118, 14, SKYBLUE);
+                    DrawText(TextFormat("stomach %.0fg  gut %.0f  colon %.0f  rectum %.0fg  bowel %.0f%s%s", st.stomachG, st.gutG, st.colonG, st.rectumG,
+                                        st.Get(Need::Bowel), bf.pooping ? "  POOPING" : "", bf.soiledClothes ? " (in underwear)" : ""), x, 156, 14, Color{200, 160, 120, 255});
                 }
                 const MotorFeedback& mf = body->motor.Feedback();
                 DrawText(TextFormat("stance %s%s%s%s  %.2f m/s%s", StanceName(mf.stance), mf.inTransition ? " (moving)" : "",

@@ -129,6 +129,8 @@ void Perception::Sense(const World& world, const Motor& motor, const Character& 
         feel("thirsty", (body->Get(Need::Thirst) - 40.f) / 50.f);
         feel("tired", (body->Get(Need::Fatigue) - 45.f) / 45.f);
         feel("need to pee", (body->Get(Need::Bladder) - 55.f) / 40.f);
+        feel("need to poop", (body->Get(Need::Bowel) - 50.f) / 45.f);
+        feel("full", (body->Fullness() - 0.45f) / 0.5f);
         feel("bored", (body->Get(Need::Boredom) - 45.f) / 45.f);
         feel("wet", body->skinWater * 1.6f);
     }
@@ -140,6 +142,7 @@ void Perception::Sense(const World& world, const Motor& motor, const Character& 
         out.biteG = matter->biteG;
         out.chewing = matter->chewing;
         out.peeing = matter->peeing;
+        out.pooping = matter->pooping;
     }
 }
 

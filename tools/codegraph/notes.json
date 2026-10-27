@@ -5,6 +5,9 @@
  "BodyMatter::Step": [
   "held food hangs below the palm: to eat, aim the palm at (mouth + 5cm forward) - (food - palm); bite reach is 6cm from the food's surface"
  ],
+ "BodyState::Swallow": [
+  "Digestion compartments in game hours: stomach (exp 1.2 h) -> gut (6 h) -> colon (14 h) -> rectum. Stool = 4x residue (75% water). Need::Bowel = rectumG/2.2. Hunger still drops at swallow (satiety), kcal not delayed."
+ ],
  "Character::ApplyTissueContact": [
   "breast/glute squash: scales the soft bone along the bone axis closest to world up, volume kept (spread 1/sqrt)"
  ],
@@ -27,8 +30,14 @@
  "Perception::Sense": [
   "SENSOR FIREWALL: entity ids/names/types must never leave this function; tracks are scrambled ids keyed by zone+entity"
  ],
+ "TestDigestion": [
+  "1600 g / 2000 kcal / 45 g residue day -> ~145 g in the rectum after 30 h (normal 100-200 g/day)."
+ ],
  "World::AirTemperature": [
   "heater warmth = W*0.012/(0.25+d^2) C, capped 25 per heater: a 120 W 12 V element is only ~3 C at 45 cm (realistic)"
+ ],
+ "World::Bite": [
+  "Food is a voxel block (~12 cells on its long side, FoodRt.vox 0 eaten/1 skin/2 flesh). A bite removes the ~12 g of voxels nearest the mouth (in the food's local frame) and marks neighbours as flesh. Unbitten food renders as its plain box; bitten food as x-runs, buried runs skipped."
  ],
  "World::BuildDoor": [
   "Door panels must clear the floor (bottom >= ~1 cm): floor friction under a 6 kg door looked like a 3x too-strong seal."
@@ -41,5 +50,8 @@
  ],
  "World::RayCast": [
   "pass skipAgent=true from Jenny's code or rays hit her own hands/torso"
+ ],
+ "World::SpawnStool": [
+  "Raycasts down (skipAgent) first: if a container/bowl is below, stool goes into ContainerRt.stoolG (drawn as lumps, cleared by its drain/flush). Spawning a body there would start inside the static toilet box and get ejected."
  ]
 }

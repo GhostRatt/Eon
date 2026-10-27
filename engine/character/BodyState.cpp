@@ -19,13 +19,15 @@ const char* NeedName(Need n) {
     case Need::Hygiene: return "feel grimy";
     case Need::Boredom: return "bored";
     case Need::Libido: return "aroused";
+    case Need::Bowel: return "need to poop";
     default: return "?";
     }
 }
 
 BodyState::BodyState() {
-    const float start[] = {20, 30, 25, 15, 10, 20, 15};
-    const float rate[] = {6, 6, 8, 10, 2, 10, 3};
+    const float start[] = {20, 30, 25, 15, 10, 20, 15, 10};
+    const float rate[] = {6, 6, 8, 10, 2, 10, 3, 0};   // bowel: driven by what's in her rectum, not by the clock
+    rectumG = 22.f;   // the day starts with a little in there
     for (int i = 0; i < N(Need::Count); ++i) { needs[i] = start[i]; ratePerHour[i] = rate[i]; }
 }
 
@@ -48,6 +50,15 @@ void BodyState::Eat(float kcal) {
     needs[N(Need::Hunger)] = std::clamp(needs[N(Need::Hunger)] - kcal / 15.f, 0.f, 100.f);   // ~1500 kcal from starving to full
 }
 
+void BodyState::Swallow(float grams, float kcal, float residueG) {
+    if (grams <= 0.f) return;
+    stomachG += grams;
+    Eat(kcal);
+    gutG += residueG * 4.f;
+}
+
+void BodyState::Defecate(float grams) { rectumG = std::max(0.f, rectumG - grams); }
+
 void BodyState::Urinate(float ml) { needs[N(Need::Bladder)] = std::clamp(needs[N(Need::Bladder)] - ml / 4.f, 0.f, 100.f); }
 
 void BodyState::WetSkin(float ml, bool urine) {
@@ -63,6 +74,19 @@ void BodyState::Step(const BodyInputs& in, float realDt) {
         const float moved = std::min(absorbing, absorbing * (1.f - std::exp(-hours / 0.75f)) + 0.5f * hours);
         absorbing -= moved;
         needs[N(Need::Bladder)] = std::min(100.f, needs[N(Need::Bladder)] + moved * 0.8f / 4.f);
+    }
+    // digestion: stomach empties (~1.2 h half-life feel), gut transit ~6 h, colon ~14 h
+    {
+        const float st = stomachG * (1.f - std::exp(-hours / 1.2f));
+        stomachG -= st;
+        digestedG += st;
+        const float g = gutG * (1.f - std::exp(-hours / 6.f));
+        gutG -= g;
+        colonG += g;
+        const float c = colonG * (1.f - std::exp(-hours / 14.f));
+        colonG -= c;
+        rectumG += c;
+        needs[N(Need::Bowel)] = std::clamp(rectumG / 2.2f, 0.f, 100.f);   // ~220 g: can't hold it much longer
     }
     // wet skin dries (faster when warm) and cools her while it does
     const float dry = (0.6f + std::max(0.f, in.ambientC - 15.f) * 0.06f) * hours;

@@ -50,12 +50,36 @@ void BodyMatter::Step(World& world, const Character& ch, const Motor& motor, con
         world.ClearBodyStream();
     }
 
+    // pooping: from behind the groin, in pieces; seated over a bowl they drop into it
+    if (in.poop && body.rectumG > 1.f) {
+        const Vec3 F = ch.placement.r.Rotate({0, 0, 1});
+        const float g = std::min(poopRate * dt, body.rectumG);
+        body.Defecate(g);
+        feel_.pooping = true;
+        feel_.stoolG = g;
+        if (groinCovered) {   // into her underwear: messy, and she knows it
+            feel_.soiledClothes = true;
+            body.needs[static_cast<int>(Need::Hygiene)] = std::min(100.f, body.Get(Need::Hygiene) + g * 0.6f);
+            body.mood = std::max(0.f, body.mood - g * 0.15f);
+        } else {
+            pushing_ += g;
+            if (pushing_ >= pieceG || body.rectumG <= 1.f) {
+                world.SpawnStool(ch.GroinPos() - F * 0.08f - Vec3{0, 0.04f, 0}, Vec3{0, -0.2f, 0} - F * 0.05f, pushing_);
+                pushing_ = 0.f;
+            }
+        }
+    } else if (pushing_ > 1.f && !groinCovered) {   // stopped mid-way: what's out drops
+        const Vec3 F = ch.placement.r.Rotate({0, 0, 1});
+        world.SpawnStool(ch.GroinPos() - F * 0.08f - Vec3{0, 0.04f, 0}, Vec3{0, -0.2f, 0}, pushing_);
+        pushing_ = 0.f;
+    }
+
     // what reached her this step
     const Intake got = world.TakeIntake();
     const float water = got.ml[static_cast<int>(Liquid::Water)], urine = got.ml[static_cast<int>(Liquid::Urine)];
     body.Drink(water);
     body.Drink(urine, true);
-    body.Eat(got.kcal);
+    body.Swallow(got.foodG, got.kcal, got.residueG);
     if (got.skinMl > 0.f) body.WetSkin(got.skinMl - got.skinUrineMl), body.WetSkin(got.skinUrineMl, true);
     feel_.drankMl = water;
     feel_.drankUrineMl = urine;

@@ -92,7 +92,7 @@ void World::Reset() {
     ++generation_;
     joints_.clear();
     grab_ = {};   // its bodies were removed by Clear()
-    doors_.clear(); colds_.clear();
+    doors_.clear(); colds_.clear(); stools_.clear();
     taps_.clear(); containers_.clear(); puddles_.clear(); foods_.clear(); heaters_.clear(); streamDraw_.clear();
     bodyStream_ = {}; intake_ = {}; hasMouth_ = mouthOpen_ = false;
 

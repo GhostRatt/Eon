@@ -66,6 +66,7 @@ public:
     void AddForce(BodyHandle h, const Vec3& force, const Vec3& worldPoint);
     void AddTorque(BodyHandle h, const Vec3& torque);
     void SetAngularVelocity(BodyHandle h, const Vec3& w);
+    void SetLinearVelocity(BodyHandle h, const Vec3& v);
     void Wake(BodyHandle h);
     void SetTransform(BodyHandle h, const Vec3& pos, const Quat& rot);  // teleport
     void MoveKinematic(BodyHandle h, const Vec3& pos, const Quat& rot, float dt);

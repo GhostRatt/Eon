@@ -226,6 +226,11 @@ void Physics::AddForce(BodyHandle h, const Vec3& f, const Vec3& p) {
     impl_->BI().AddForce(Id(h), J(f), JPH::RVec3(p.x, p.y, p.z));
 }
 
+void Physics::SetLinearVelocity(BodyHandle h, const Vec3& v) {
+    if (!IsDynamic(h)) return;
+    impl_->BI().SetLinearVelocity(Id(h), J(v));
+}
+
 void Physics::AddTorque(BodyHandle h, const Vec3& t) {
     if (!IsDynamic(h)) return;
     impl_->BI().AddTorque(Id(h), J(t));

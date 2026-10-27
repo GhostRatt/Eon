@@ -50,6 +50,8 @@ struct Intake {
     float ml[static_cast<int>(Liquid::Count)] = {};   // swallowed
     float kcal = 0.f;                                 // food bitten off
     float foodG = 0.f;
+    float foodDryG = 0.f;                             // the solid part of it (what's left once the water's out)
+    float residueG = 0.f;                             // of that, what she can't digest (fiber): it becomes stool
     float skinMl = 0.f;                               // liquid that landed on her body
     float skinUrineMl = 0.f;
 };
@@ -140,6 +142,11 @@ public:
     float PuddleMl(Liquid l = Liquid::Count) const;
     int PuddleCount() const;
     float FoodLeftG(int entityId) const;
+    int FoodBites(int entityId) const;                     // bite marks taken out of it so far
+    // Stool leaving her body: a soft piece that falls from `pos` (lands in a toilet bowl, on the floor...).
+    int SpawnStool(const Vec3& pos, const Vec3& vel, float grams);
+    int StoolCount() const;                                // pieces still in the world (not flushed)
+    float ContainerStoolG(int entityId) const;             // stool sitting in a bowl/container (a flush takes it)
 
     // ---- Object scripts (World_Scripts.cpp): Lua in an entity's "script" (file under the content root) or "script_src" ----
     // A script is the object's own machinery (a vending machine's logic, a thermostat): it may read and drive the
@@ -255,9 +262,17 @@ private:
     struct DriveRt { int body = -1; Vec3 target; float maxForce = 0.f, freq = 12.f, damping = 1.f; };
     // matter runtime
     struct TapRt { int entity = 0, body = -1; Vec3 outLocal, dirLocal{0, -1, 0}; float rate = 60.f, speed = 0.6f; int valve = 0; bool powered = false; Liquid kind = Liquid::Water; int jets = 1; float spread = 0.f; bool scripted = false, scriptOpen = false; };
-    struct ContainerRt { int entity = 0, body = -1; float capacity = 300.f; float ml[int(Liquid::Count)] = {}; Vec3 half; int drain = 0; bool dirtyDrain = false; };
+    struct ContainerRt { int entity = 0, body = -1; float capacity = 300.f; float ml[int(Liquid::Count)] = {}; Vec3 half; int drain = 0; bool dirtyDrain = false; float stoolG = 0.f; };
     struct PuddleRt { Vec3 pos; float ml[int(Liquid::Count)] = {}; int id = 0; };
-    struct FoodRt { int entity = 0, body = -1; float grams = 100.f, left = 100.f, kcalPerG = 0.6f, waterPerG = 0.8f; Vec3 size; bool gone = false; };
+    // Food is a small voxel block so bites take real chunks out where her teeth were: each voxel is skin (outside)
+    // until a bite exposes it, then it shows the flesh color.
+    struct FoodRt {
+        int entity = 0, body = -1; float grams = 100.f, left = 100.f, kcalPerG = 0.6f, waterPerG = 0.8f, residue = 0.1f; Vec3 size; bool gone = false;
+        int nx = 1, ny = 1, nz = 1, bites = 0; float gPerVox = 1.f; std::vector<uint8_t> vox;   // 0 eaten, 1 skin, 2 exposed flesh
+        Rgb skin, flesh;
+    };
+    struct StoolRt { int entity = 0, body = -1; float grams = 0.f; bool gone = false; };
+    std::vector<StoolRt> stools_;
     struct HeaterRt { int entity = 0, body = -1; };
     struct DoorRt { int entity = 0, body = -1; ConstraintHandle hinge = kNoConstraint; bool built = false, locked = false, held = false; float swing = 1.75f, seal = 0.f, friction = 0.3f; Vec3 axisW; };
     // a closed space with its own air (fridge, freezer, oven): temperature inside its box drifts toward `airC`

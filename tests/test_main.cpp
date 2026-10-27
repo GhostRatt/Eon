@@ -1293,6 +1293,59 @@ static void TestSitOnSeat() {
 }
 
 
+// Bites take real chunks out of food where her teeth were, and the inside shows.
+static void TestBiteMarks() {
+    Zone z = FloorZone(0.f, 0.f);
+    z.entities.push_back(Ent(30, "Apple", "food", {0.f, 0.0375f, 0.f}, {0.075f, 0.075f, 0.075f}, 0.15f, {{"grams", 150.0}}));
+    World w;
+    w.SetZone(z);
+    w.Advance(0.3);
+    const Vec3 a = w.BodyPosition(w.MainBodyOf(30));
+    CHECK(w.Bite(a + Vec3{0.06f, 0.f, 0.f}) > 8.f);      // from the +x side
+    CHECK(w.FoodBites(30) == 1);
+    CHECK(w.FoodLeftG(30) > 130.f && w.FoodLeftG(30) < 145.f);
+    RenderFrame rf;
+    w.BuildRenderFrame(rf);
+    int pieces = 0, flesh = 0;
+    bool biteSideSolid = false;
+    for (const RenderPiece& p : rf.pieces) {
+        if (p.entity != 30) continue;
+        ++pieces;
+        flesh += p.color.g > 150;                          // pale inside vs red skin
+        const Vec3 d = p.pos - a;
+        if (d.x + 0.5f * p.size.x > 0.03f && std::fabs(d.y) < 0.006f && std::fabs(d.z) < 0.006f) biteSideSolid = true;
+    }
+    CHECK(pieces > 10 && flesh > 0);
+    CHECK(!biteSideSolid);                                // the middle of the +x face is gone
+    for (int k = 0; k < 20 && w.FoodLeftG(30) > 0.f; ++k) w.Bite(w.BodyPosition(w.MainBodyOf(30)) + Vec3{0.f, 0.06f, 0.f});
+    CHECK(w.FoodLeftG(30) == 0.f);                       // eaten down to nothing, then it's gone
+    const Intake in = w.TakeIntake();
+    CHECK(std::fabs(in.foodG - 150.f) < 1.f && in.residueG > 1.f && in.foodDryG > 15.f);
+}
+
+// Digestion: stomach empties over hours, stool builds up over about a day, the urge follows, going relieves it.
+static void TestDigestion() {
+    BodyState b;
+    b.gameMinutesPerSecond = 60.f;                        // 1 s = 1 game hour
+    BodyInputs in;
+    b.rectumG = 0.f;
+    b.Step(in, 0.01f);
+    CHECK(b.Get(Need::Bowel) < 2.f);
+    // a day's food: ~1.6 kg, ~2000 kcal, ~45 g of it fiber/indigestible
+    b.Swallow(1600.f, 2000.f, 45.f);
+    CHECK(b.Fullness() > 0.9f);
+    for (int k = 0; k < 3 * 10; ++k) b.Step(in, 0.1f);    // 3 h
+    CHECK(b.stomachG < 0.25f * 1600.f && b.stomachG > 0.f);
+    CHECK(b.rectumG < 40.f);                              // nothing's come through yet
+    for (int k = 0; k < 27 * 10; ++k) b.Step(in, 0.1f);   // a day and more later
+    std::printf("  digestion after 30 h: stomach %.0f g, gut %.0f, colon %.0f, rectum %.0f g, urge %.0f\n", b.stomachG, b.gutG, b.colonG, b.rectumG, b.Get(Need::Bowel));
+    CHECK(b.rectumG > 90.f && b.rectumG < 180.f);         // ~150-200 g stool/day is normal
+    CHECK(b.Get(Need::Bowel) > 40.f);
+    b.Defecate(b.rectumG);
+    b.Step(in, 0.01f);
+    CHECK(b.Get(Need::Bowel) < 2.f);
+}
+
 static void TestJennyDrinksEatsPees() {
     Zone z = FloorZone(0.f, 0.f);
     z.entities.push_back(Ent(20, "Tap", "tap", {3.f, 2.f, 3.f}, {0.04f, 0.04f, 0.04f}, 0.f, {{"rate", 40.0}}));
@@ -1324,7 +1377,7 @@ static void TestJennyDrinksEatsPees() {
             j.motor.PostPhysics(j.ch, w, pp, 1 / 60.f);
             bm.Step(w, j.ch, j.motor, j.in, b, false, 1 / 60.f);
             b.Step(bin, 1 / 60.f);
-            felt.drankMl += bm.Feel().drankMl; felt.biteG += bm.Feel().biteG; felt.peeing |= bm.Feel().peeing;
+            felt.drankMl += bm.Feel().drankMl; felt.biteG += bm.Feel().biteG; felt.peeing |= bm.Feel().peeing; felt.pooping |= bm.Feel().pooping;
             clock += 1 / 60.0;
             if (++frame % 6 == 0) { eyes.Sense(w, j.motor, j.ch, &b, clock, pc, &felt); mind.Observe(pc); felt = {}; }
         }
@@ -1363,7 +1416,9 @@ static void TestJennyDrinksEatsPees() {
         live(1 / 60.f);
     }
     CHECK(w.FoodLeftG(23) < 70.f);                      // she took several bites
+    CHECK(w.FoodBites(23) >= 2);                         // each one left its mark
     CHECK(b.Get(Need::Hunger) < hunger0);
+    CHECK(b.stomachG > 20.f);                            // and it's in her stomach now
     j.in.mouth = MouthAction::Closed;
     h.grip = false;
     h.reach = false;
@@ -1389,6 +1444,32 @@ static void TestJennyDrinksEatsPees() {
     live(0.5);
     CHECK(w.ContainerMl(21, Liquid::Urine) > 25.f);
     CHECK(w.PuddleMl(Liquid::Urine) < floorUrine + 5.f);
+
+    // still on the toilet, she poops: it drops into the bowl in pieces
+    b.rectumG = 130.f;
+    j.in.poop = true;
+    live(16.0);
+    j.in.poop = false;
+    live(0.5);
+    std::printf("  toilet: %.0f g stool in the bowl, %.0f g left in her\n", w.ContainerStoolG(21), b.rectumG);
+    CHECK(w.ContainerStoolG(21) > 100.f && b.rectumG < 5.f);
+    CHECK(w.StoolCount() == 0);
+    CHECK(mind.graph.Find(NodeKind::Action, "poop") != 0);
+
+    // squatting on the floor instead: a real piece lands on the floor
+    j.in.stance = Stance::Stand;
+    live(2.0);
+    j.in.stance = Stance::Crouch;
+    live(2.0);
+    b.rectumG = 40.f;
+    j.in.poop = true;
+    live(6.0);
+    j.in.poop = false;
+    live(1.5);
+    int stool = 0;
+    for (const Entity& e : w.GetZone().entities) if (e.type == "stool") stool = e.id;
+    CHECK(w.StoolCount() == 1 && stool > 0);
+    if (stool > 0) CHECK(w.BodyPosition(w.MainBodyOf(stool)).y < 0.06f);   // on the floor, not floating or inside her
 
     // and her mind worked out what drinking and biting do for her
     auto causes = [&](const char* effect) {
@@ -1531,6 +1612,8 @@ int main(int argc, char** argv) {
     RUN(TestCarriesThings, content);
     RUN(TestStances);
     RUN(TestSitOnSeat);
+    RUN(TestBiteMarks);
+    RUN(TestDigestion);
     RUN(TestJennyDrinksEatsPees);
     RUN(TestStepAndClimb);
     RUN(TestLipSync);

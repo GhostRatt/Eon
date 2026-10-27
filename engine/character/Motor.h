@@ -21,6 +21,8 @@ struct HandIntent {
     float effort = 0.5f;       // 0..1 of max arm strength (pressing harder, lifting heavier)
 };
 
+enum class MouthAction : int { Closed, Open, Bite };   // open: drink/let things in; bite: bite and chew
+
 enum class Stance : int { Stand, Crouch, Kneel, Sit, Crawl, Prone, LieBack, LieLeft, LieRight, SitSeat, Count };
 const char* StanceName(Stance s);
 
@@ -33,6 +35,8 @@ struct MotorIntent {
     std::array<HandIntent, 2> hands;   // 0 left, 1 right
     Stance stance = Stance::Stand;     // body position to get into (she moves through the in-between ones)
     bool climb = false;                // with moveDir: climb up onto / down off what's in front of her
+    MouthAction mouth = MouthAction::Closed;
+    bool pee = false;                  // let the bladder go (wherever she is: on a toilet, or not)
 };
 
 // What her body physically feels from moving (fed to BodyState / the mind's proprioception).

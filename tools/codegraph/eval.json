@@ -8,7 +8,8 @@
  [
   "lever handle hinge throw",
   [
-   "World::BuildEntity"
+   "World::BuildEntity",
+   "World::DebugActuate"
   ]
  ],
  [

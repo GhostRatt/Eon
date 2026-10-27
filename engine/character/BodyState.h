@@ -43,6 +43,15 @@ public:
     float drowsy = 0.f;          // 0..1 builds while lying still
     void UpdateSleep(bool lyingStill, float realDt);
 
+    // Physical intake/output (amounts are real: ml, kcal). Water is absorbed and reaches the bladder over ~45 game min.
+    void Drink(float ml, bool urine = false);
+    void Eat(float kcal);
+    void Urinate(float ml);           // empties the bladder (400 ml = full)
+    void WetSkin(float ml, bool urine = false);
+    float BladderMl() const { return Get(Need::Bladder) * 4.f; }
+    float skinWater = 0.f;            // 0..1 wet from outside (shower, spills); dries over time, evaporation cools
+    float absorbing = 0.f;            // ml of drunk water still on its way to the bladder
+
     float Get(Need n) const { return needs[static_cast<int>(n)]; }
     void Satisfy(Need n, float amount);
     std::string Describe(float ambientC) const;   // first-person-ish body sense for the mind (no world names)

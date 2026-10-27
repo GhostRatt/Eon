@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "character/BodyMatter.h"
 #include "character/BodyState.h"
 #include "character/Character.h"
 #include "character/Motor.h"
@@ -46,13 +47,18 @@ struct Percept {
     bool bumped = false, atEdge = false;
     float light = 0.f;              // overall brightness she sees
     std::vector<std::pair<std::string, float>> feelings;   // ("cold", 0.7) ...
+    // mouth and body (what she takes in / lets out, felt directly)
+    float drankMl = 0.f, biteG = 0.f;
+    bool chewing = false, peeing = false;
+    float airC = 20.f;              // how warm the air feels where she is
 };
 
 class Perception {
 public:
     float fovDeg = 160.f;   // incl. peripheral vision (a light coming on at the side is noticed)
     float range = 7.f;
-    void Sense(const World& world, const Motor& motor, const Character& ch, const BodyState* body, double t, Percept& out);
+    void Sense(const World& world, const Motor& motor, const Character& ch, const BodyState* body, double t, Percept& out,
+               const BodyMatterFeel* matter = nullptr);
 
 private:
     uint32_t Track(int entity);

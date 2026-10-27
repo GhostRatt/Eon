@@ -53,6 +53,31 @@ std::string Learner::Name(const SeenThing& s) {
     return n == 1 ? base : base + " " + std::to_string(n);
 }
 
+uint32_t Learner::NearMouth(const Percept& p) const {
+    // what's at her mouth: something in her hand first, else the nearest thing just in front of her face
+    for (const HandFeel& h : p.hands) if (h.holding && NodeOf(h.held)) return NodeOf(h.held);
+    uint32_t best = 0;
+    float bd = 0.5f;
+    for (const SeenThing& s : p.seen) {
+        if (s.wide) continue;
+        const float d = Distance(s.pos, p.eye);
+        if (d < bd && NodeOf(s.track)) { bd = d; best = NodeOf(s.track); }
+    }
+    return best;
+}
+
+void Learner::SelfHappened(const std::string& what, double t) {
+    if (!me_) return;
+    const uint32_t e = graph.Ensure(NodeKind::Effect, what, t);
+    graph.Touch(e, t, 0.3f);
+    graph.Evidence(e, me_, Rel::Affects, Source::Observed, true, t);
+    std::vector<uint32_t> cands;
+    for (const Recent& r : recent_)
+        if (t - r.t <= causeWindow && std::find(cands.begin(), cands.end(), r.action) == cands.end()) cands.push_back(r.action);
+    const float w = cands.empty() ? 1.f : 1.f / float(cands.size());
+    for (uint32_t a : cands) graph.Evidence(a, e, Rel::Causes, cands.size() == 1 ? Source::Inferred : Source::Ambiguous, true, t, w);
+}
+
 uint32_t Learner::NodeOf(uint32_t track) const {
     auto it = tracks_.find(track);
     return it == tracks_.end() ? 0 : it->second.node;
@@ -236,6 +261,34 @@ void Learner::Observe(const Percept& p) {
         for (const auto& f : p.feelings) still |= f.first == name && f.second > 0.25f;
         if (!still) was = false;
     }
+
+    // mouth and body: drinking/eating from something, and what it does for her
+    const bool thirsty = std::any_of(p.feelings.begin(), p.feelings.end(), [](const auto& f) { return f.first == "thirsty" && f.second > 0.2f; });
+    const bool hungry = std::any_of(p.feelings.begin(), p.feelings.end(), [](const auto& f) { return f.first == "hungry" && f.second > 0.2f; });
+    if (p.drankMl > 0.f) {
+        if (t - lastDrink_ > 3.0) {
+            const uint32_t src = NearMouth(p);
+            if (src) Act("drink from", src, t);
+            else { const uint32_t a = graph.Ensure(NodeKind::Action, "drink", t); graph.Touch(a, t, 0.1f); recent_.push_back({a, t}); }
+            if (thirsty) SelfHappened("I'm less thirsty", t);
+        }
+        lastDrink_ = t;
+    }
+    if (p.biteG > 0.f) {
+        if (t - lastBite_ > 3.0) {
+            const uint32_t food = NearMouth(p);
+            if (food) { Act("bite", food, t); Property(food, "can be eaten", true, t); }
+            if (hungry) SelfHappened("I'm less hungry", t);
+        }
+        lastBite_ = t;
+    }
+    if (p.peeing && !wasPeeing_) {
+        const uint32_t a = graph.Ensure(NodeKind::Action, "pee", t);
+        graph.Touch(a, t, 0.1f);
+        recent_.push_back({a, t});
+        SelfHappened("my bladder is relieved", t);
+    }
+    wasPeeing_ = p.peeing;
 
     if (t - lastSpatial_ > 2.0) { Spatial(p); lastSpatial_ = t; }
 }

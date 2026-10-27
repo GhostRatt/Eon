@@ -2,6 +2,9 @@
  "ApplyPosture": [
   "feet keep footRot captured before pelvis lean/tilt; footFollow (kneel/lie) lets them follow the shins then floor-push via LowestFootPoint"
  ],
+ "BodyMatter::Step": [
+  "held food hangs below the palm: to eat, aim the palm at (mouth + 5cm forward) - (food - palm); bite reach is 6cm from the food's surface"
+ ],
  "Character::ApplyTissueContact": [
   "breast/glute squash: scales the soft bone along the bone axis closest to world up, volume kept (spread 1/sqrt)"
  ],
@@ -20,6 +23,15 @@
  ],
  "Perception::Sense": [
   "SENSOR FIREWALL: entity ids/names/types must never leave this function; tracks are scrambled ids keyed by zone+entity"
+ ],
+ "World::AirTemperature": [
+  "heater warmth = W*0.012/(0.25+d^2) C, capped 25 per heater: a 120 W 12 V element is only ~3 C at 45 cm (realistic)"
+ ],
+ "World::BuildEntity": [
+  "buttons mounted flush on another static body get stuck (Jolt contact margin): give the button base a ~5 mm standoff from the surface it sits on"
+ ],
+ "World::FlowStream": [
+  "body streams (peeing) start inside her torso collider: they raycast with skipAgent=true; tap streams start 6mm below the spout so they don't hit the tap"
  ],
  "World::RayCast": [
   "pass skipAgent=true from Jenny's code or rays hit her own hands/torso"

@@ -36,18 +36,48 @@ void BodyState::Satisfy(Need n, float amount) {
     if (n == Need::Hunger) needs[N(Need::Bladder)] = std::min(100.f, needs[N(Need::Bladder)] + amount * 0.05f);
 }
 
+void BodyState::Drink(float ml, bool urine) {
+    if (ml <= 0.f) return;
+    needs[N(Need::Thirst)] = std::clamp(needs[N(Need::Thirst)] - ml / 6.f, 0.f, 100.f);   // ~600 ml quenches a big thirst
+    absorbing += ml;
+    if (urine) { needs[N(Need::Hygiene)] = std::min(100.f, needs[N(Need::Hygiene)] + ml * 0.2f); mood = std::max(0.f, mood - ml * 0.3f); }
+}
+
+void BodyState::Eat(float kcal) {
+    if (kcal <= 0.f) return;
+    needs[N(Need::Hunger)] = std::clamp(needs[N(Need::Hunger)] - kcal / 15.f, 0.f, 100.f);   // ~1500 kcal from starving to full
+}
+
+void BodyState::Urinate(float ml) { needs[N(Need::Bladder)] = std::clamp(needs[N(Need::Bladder)] - ml / 4.f, 0.f, 100.f); }
+
+void BodyState::WetSkin(float ml, bool urine) {
+    skinWater = std::clamp(skinWater + ml / 400.f, 0.f, 1.f);
+    if (urine) needs[N(Need::Hygiene)] = std::min(100.f, needs[N(Need::Hygiene)] + ml * 0.15f);
+    else needs[N(Need::Hygiene)] = std::max(0.f, needs[N(Need::Hygiene)] - ml * 0.03f);   // water rinses
+}
+
 void BodyState::Step(const BodyInputs& in, float realDt) {
     const float hours = realDt * gameMinutesPerSecond / 60.f;
+    // water on its way through: absorbed over ~45 game minutes, then it's in the bladder
+    if (absorbing > 0.f) {
+        const float moved = std::min(absorbing, absorbing * (1.f - std::exp(-hours / 0.75f)) + 0.5f * hours);
+        absorbing -= moved;
+        needs[N(Need::Bladder)] = std::min(100.f, needs[N(Need::Bladder)] + moved * 0.8f / 4.f);
+    }
+    // wet skin dries (faster when warm) and cools her while it does
+    const float dry = (0.6f + std::max(0.f, in.ambientC - 15.f) * 0.06f) * hours;
+    skinWater = std::max(0.f, skinWater - dry);
     exertionSmoothed_ += (in.exertion - exertionSmoothed_) * std::clamp(realDt * 0.5f, 0.f, 1.f);
 
     // ---- Thermal (same model as the UE component) ----
     sweat = std::clamp((coreC - 37.2f) / 0.8f, 0.f, 1.f);
     shiver = std::clamp((36.6f - coreC) / 1.0f, 0.f, 1.f);
-    const float effective = in.ambientC + in.clothingClo * 7.f + in.sunExposure * 8.f + exertionSmoothed_ * 12.f;
+    const float effective = in.ambientC + in.clothingClo * 7.f + in.sunExposure * 8.f + exertionSmoothed_ * 12.f - skinWater * 6.f;
     float target = 37.f + (effective - 28.f) * 0.06f - sweat * 0.8f + shiver * 0.5f;
     target = std::clamp(target, 33.f, 41.f);
     coreC += (target - coreC) * (1.f - std::exp(-2.f * hours));
     wetness += (sweat - wetness) * (1.f - std::exp(-4.f * hours));
+    wetness = std::max(wetness, skinWater);
 
     if (coreC < 35.5f) thermal = Thermal::Freezing;
     else if (coreC < 36.5f) thermal = Thermal::Cold;

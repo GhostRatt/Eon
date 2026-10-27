@@ -147,6 +147,12 @@ bool Character::Init(const CharacterAsset* asset) {
     SetupSoftBones();
     SetupHands();
     BuildContactSamples();
+    {
+        // mouth: in front of and below the head joint; groin: below and in front of the hip joint (bind pose, model faces +Z)
+        const Vec3 fwd = placement.r.Rotate({0, 0, 1});
+        if (rig_.head >= 0) mouthLocal_ = world_[rig_.head].Inverse().Apply(world_[rig_.head].t + fwd * (0.085f * height_ / 1.7f) + Vec3{0, -0.045f * height_ / 1.7f, 0});
+        if (rig_.pelvis >= 0) groinLocal_ = world_[rig_.pelvis].Inverse().Apply(world_[rig_.pelvis].t + fwd * (0.05f * height_ / 1.7f) + Vec3{0, -0.1f * height_ / 1.7f, 0});
+    }
     limbDelta_.assign(4, Vec3{});
     return true;
 }
@@ -321,6 +327,9 @@ float Character::LowestFootPoint(int i) const {
     }
     return footSamples_[i].empty() ? (rig_.foot[i] >= 0 ? world_[rig_.foot[i]].t.y - 0.07f : 0.f) : lo;
 }
+
+Vec3 Character::MouthPos() const { return rig_.head >= 0 ? world_[rig_.head].Apply(mouthLocal_) : placement.t + Vec3{0, 1.5f, 0}; }
+Vec3 Character::GroinPos() const { return rig_.pelvis >= 0 ? world_[rig_.pelvis].Apply(groinLocal_) : placement.t + Vec3{0, 0.8f, 0}; }
 
 Vec3 Character::PalmNormal(int i) const {
     const int hb = rig_.hand[i];

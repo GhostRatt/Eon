@@ -8,6 +8,7 @@
 #include "character/BodyState.h"
 #include "character/LipSync.h"
 #include "character/Motor.h"
+#include "character/BodyMatter.h"
 #include "mind/Learner.h"
 #include "mind/MemoryGraph.h"
 #include "mind/Perception.h"
@@ -443,6 +444,133 @@ struct TestJenny {
     }
 };
 
+
+static Entity Ent(int id, const char* name, const char* type, Vec3 pos, Vec3 size, float mass = 0.f, nlohmann::json params = nlohmann::json::object()) {
+    Entity e; e.id = id; e.name = name; e.type = type; e.pos = pos; e.size = size; e.massKg = mass; e.params = params; return e;
+}
+
+static void TestMatter() {
+    Zone z;
+    z.name = "Kitchen";
+    z.ambientC = 20.f;
+    z.entities = {
+        Ent(1, "Floor", "static", {0, -0.05f, 0}, {8, 0.1f, 8}),
+        Ent(2, "Valve", "lever", {-1.f, 1.0f, -2.f}, {0.04f, 0.16f, 0.1f}, 0.f, {{"axis", {0, 0, 1}}}),
+        Ent(3, "Tap", "tap", {0, 1.0f, 0}, {0.04f, 0.04f, 0.04f}, 0.f, {{"valve", 2}, {"rate", 80.0}}),
+        Ent(4, "Cup", "container", {0, 0.05f, 0}, {0.08f, 0.1f, 0.08f}, 0.25f, {{"capacity", 250.0}}),
+        Ent(5, "Battery", "battery", {2.f, 0.1f, 2.f}, {0.06f, 0.15f, 0.1f}, 0.f, {{"voltage", 12.0}, {"internalR", 0.05}, {"capacityAh", 7.0}}),
+        Ent(6, "Heater", "heater", {2.f, 0.3f, 1.5f}, {0.3f, 0.4f, 0.1f}, 0.f, {{"ratedPower", 120.0}, {"ratedVoltage", 12.0}}),
+        Ent(7, "Apple", "food", {-2.f, 0.04f, 2.f}, {0.07f, 0.07f, 0.07f}, 0.1f, {{"grams", 100.0}}),
+        Ent(8, "Flush", "lever", {3.f, 1.0f, -2.f}, {0.04f, 0.16f, 0.1f}, 0.f, {{"axis", {0, 0, 1}}}),
+        Ent(9, "Bowl", "bowl", {3.f, 0.2f, 0.f}, {0.4f, 0.4f, 0.45f}, 0.f, {{"capacity", 6000.0}, {"drain", 8}}),
+    };
+    z.links = {{5, 0, 6, 0}, {6, 1, 5, 1}};
+    World w;
+    w.SetZone(z);
+    w.Advance(0.5);
+    CHECK_NEAR(w.ContainerMl(4), 0.0, 1e-6);                    // valve shut: nothing flows
+    w.DebugActuate(2, true);                                    // open it
+    w.Advance(2.0);
+    const float half = w.ContainerMl(4, Liquid::Water);
+    CHECK(half > 100.f && half < 200.f);                        // ~80 ml/s into the cup under the spout
+    w.Advance(2.0);
+    CHECK_NEAR(w.ContainerMl(4), 250.0, 1.0);                   // full ...
+    CHECK(w.PuddleMl() > 30.f);                                 // ... and overflowing onto the floor
+    w.DebugActuate(2, false);
+    w.Advance(0.5);
+    const float puddle = w.PuddleMl();
+
+    // drinking straight from the stream: an open mouth under the spout takes it, a closed one doesn't
+    w.DebugActuate(2, true);
+    w.Advance(0.6);
+    w.TakeIntake();
+    w.SetMouth({0, 0.6f, 0}, true);
+    w.Advance(1.0);
+    const Intake drink = w.TakeIntake();
+    CHECK(drink.ml[int(Liquid::Water)] > 60.f);
+    w.SetMouth({0, 0.6f, 0}, false);
+    w.Advance(0.5);
+    CHECK(w.TakeIntake().ml[int(Liquid::Water)] < 1.f);
+    w.DebugActuate(2, false);
+    w.Advance(0.6);
+
+    // a tipped cup pours out
+    const int cupBody = w.MainBodyOf(4);
+    w.GetPhysics().SetTransform(w.HandleOf(cupBody), {1.0f, 0.3f, 1.0f}, Quat::AxisAngle({1, 0, 0}, 1.9f));
+    w.Advance(1.5);
+    CHECK(w.ContainerMl(4) < 50.f);
+    CHECK(w.PuddleMl() > puddle + 150.f);
+    CHECK(w.PuddleCount() >= 2);
+
+    // heater: warm near it, room temperature across the room, and it drains the battery
+    CHECK(w.AirTemperature({2.f, 0.4f, 1.3f}) > 23.f);      // a 120 W element: a few degrees right in front of it
+    CHECK_NEAR(w.AirTemperature({-3.f, 1.f, -3.f}), 20.0, 0.5);
+    CHECK(w.PartOf(5)->chargeAh < 7.0);
+
+    // food: bites until it's gone
+    float g = 0;
+    for (int k = 0; k < 12; ++k) g += w.Bite({-2.f, 0.1f, 2.f});
+    const Intake ate = w.TakeIntake();
+    CHECK_NEAR(g, 100.0, 1.0);
+    CHECK_NEAR(ate.kcal, 52.0, 2.0);
+    CHECK(ate.ml[int(Liquid::Water)] > 80.f);                  // apples are mostly water
+    CHECK_NEAR(w.FoodLeftG(7), 0.0, 1e-6);
+    CHECK_NEAR(w.Bite({-2.f, 0.1f, 2.f}), 0.0, 1e-6);         // nothing left to bite
+
+    // peeing into the toilet bowl vs onto the floor, and flushing
+    const float floorBefore = w.PuddleMl(Liquid::Urine);
+    w.SetBodyStream({3.f, 0.75f, 0.05f}, {0, -0.3f, 0.2f}, 15.f, Liquid::Urine);
+    w.Advance(4.0);
+    w.ClearBodyStream();
+    CHECK(w.ContainerMl(9, Liquid::Urine) > 50.f);
+    CHECK_NEAR(w.PuddleMl(Liquid::Urine), floorBefore, 1.0);
+    w.DebugActuate(8, true);                                    // flush
+    w.Advance(1.0);
+    CHECK(w.ContainerMl(9) < 1.f);
+    w.SetBodyStream({1.f, 0.75f, -1.f}, {0, -0.3f, 0.2f}, 15.f, Liquid::Urine);   // not over the toilet
+    w.Advance(2.0);
+    w.ClearBodyStream();
+    CHECK(w.PuddleMl(Liquid::Urine) > floorBefore + 20.f);
+
+    // puddles dry up eventually
+    const float wet = w.PuddleMl();
+    w.Advance(30.0);
+    CHECK(w.PuddleMl() < wet);
+    RenderFrame f;
+    w.BuildRenderFrame(f);
+    bool sawPuddle = false;
+    for (const RenderPiece& rp : f.pieces) sawPuddle |= rp.entity >= 1000000 && rp.entity < 2000000;
+    CHECK(sawPuddle);                                           // puddles are visible things
+}
+
+
+static void TestWaitingAreaNeeds(const std::string& contentDir) {
+    World w;
+    CHECK(w.Load(contentDir + "/zones/waiting_area.json"));
+    w.Advance(0.5);
+    const int cup = FindByName(w, "Cup"), button = FindByName(w, "DispenserButton");
+    const int heaterSw = FindByName(w, "HeaterSwitch"), shower = FindByName(w, "ShowerValve"), tray = FindByName(w, "ShowerTray");
+    CHECK_NEAR(w.ContainerMl(cup), 0.0, 1e-6);
+    w.DebugActuate(button, true);                        // hold the dispenser button
+    w.Advance(2.0);
+    w.DebugActuate(button, false);
+    w.Advance(1.0);
+    CHECK(w.ContainerMl(cup) > 40.f);                    // water in the cup on the drip tray
+    const float before = w.AirTemperature({-2.5f, 0.8f, 0.f});
+    w.DebugActuate(heaterSw, true);
+    w.Advance(1.0);
+    CHECK(w.AirTemperature({-2.6f, 0.5f, 0.f}) > before + 2.f);   // warm by the heater
+    CHECK(w.AirTemperature({2.f, 1.f, 2.f}) < before + 0.5f);     // not across the room
+    w.DebugActuate(shower, true);
+    w.Advance(1.5);
+    CHECK(w.PuddleMl() + w.ContainerMl(tray) >= 0.f);
+    RenderFrame f;
+    w.BuildRenderFrame(f);
+    bool stream = false;
+    for (const RenderPiece& rp : f.pieces) stream |= rp.entity >= 2000000;
+    CHECK(stream);                                       // the shower is running (visible water)
+}
+
 static void TestMotorPressesButton(const std::string& contentDir) {
     World w;
     CHECK(w.Load(contentDir + "/zones/test_zone_01.json"));
@@ -875,6 +1003,114 @@ static void TestSitOnSeat() {
     }
 }
 
+
+static void TestJennyDrinksEatsPees() {
+    Zone z = FloorZone(0.f, 0.f);
+    z.entities.push_back(Ent(20, "Tap", "tap", {3.f, 2.f, 3.f}, {0.04f, 0.04f, 0.04f}, 0.f, {{"rate", 40.0}}));
+    z.entities.push_back(Ent(21, "Toilet", "bowl", {0.f, 0.225f, -0.65f}, {0.4f, 0.45f, 0.45f}, 0.f, {{"capacity", 6000.0}}));
+    z.entities.push_back(Ent(22, "Stand", "static", {0.25f, 0.5f, 0.45f}, {0.15f, 1.0f, 0.15f}));
+    z.entities.push_back(Ent(23, "Apple", "food", {0.25f, 1.04f, 0.45f}, {0.07f, 0.07f, 0.07f}, 0.1f, {{"grams", 100.0}}));
+    World w;
+    w.SetZone(z);
+    TestJenny j;
+    CHECK(j.Init(w, {0, 0, -0.2f}, 0.f));
+    BodyState b;
+    b.gameMinutesPerSecond = 1.f;
+    b.needs[int(Need::Thirst)] = 70.f;
+    b.needs[int(Need::Hunger)] = 60.f;
+    b.needs[int(Need::Bladder)] = 60.f;
+    BodyMatter bm;
+    BodyInputs bin;
+    Perception eyes;
+    Learner mind;
+    BodyMatterFeel felt;
+    double clock = 0;
+    int frame = 0;
+    Percept pc;
+    auto live = [&](float seconds) {
+        for (float t = 0; t < seconds; t += 1 / 60.f) {
+            j.motor.PrePhysics(j.ch, w, j.in, 1 / 60.f);
+            w.Advance(1 / 60.f);
+            PostureParams pp;
+            j.motor.PostPhysics(j.ch, w, pp, 1 / 60.f);
+            bm.Step(w, j.ch, j.motor, j.in, b, false, 1 / 60.f);
+            b.Step(bin, 1 / 60.f);
+            felt.drankMl += bm.Feel().drankMl; felt.biteG += bm.Feel().biteG; felt.peeing |= bm.Feel().peeing;
+            clock += 1 / 60.0;
+            if (++frame % 6 == 0) { eyes.Sense(w, j.motor, j.ch, &b, clock, pc, &felt); mind.Observe(pc); felt = {}; }
+        }
+    };
+    live(0.5);
+    // a running tap just above her face: it splashes her ...
+    const Vec3 mouth = j.ch.MouthPos();
+    w.GetPhysics().SetTransform(w.HandleOf(w.MainBodyOf(20)), mouth + Vec3{0, 0.25f, 0.01f}, Quat{});
+    live(1.0);
+    CHECK(b.skinWater > 0.01f);
+    const float thirst0 = b.Get(Need::Thirst);
+    // ... and with her mouth open she drinks
+    j.in.mouth = MouthAction::Open;
+    live(3.0);
+    CHECK(b.Get(Need::Thirst) < thirst0 - 10.f);
+    CHECK(b.absorbing > 40.f);
+    j.in.mouth = MouthAction::Closed;
+    w.GetPhysics().SetTransform(w.HandleOf(w.MainBodyOf(20)), {3.f, 2.f, 3.f}, Quat{});
+
+    // eat: take the apple off the stand, hold it to her mouth and bite
+    auto& h = j.in.hands[1];
+    h.reach = true;
+    h.effort = 0.4f;
+    h.target = w.BodyPosition(w.MainBodyOf(23)) + Vec3{0, 0.06f, 0};
+    live(1.2);
+    h.grip = true;
+    live(0.3);
+    CHECK(j.motor.Feedback().holding[1]);
+    const float hunger0 = b.Get(Need::Hunger);
+    for (int k = 0; k < 10 * 60; ++k) {
+        const Vec3 F = j.ch.placement.r.Rotate({0, 0, 1});
+        // aim the apple (not the palm) just in front of her lips: palm target = where the apple should be - how it hangs from the palm
+        const Vec3 hang = w.BodyPosition(w.MainBodyOf(23)) - w.BodyPosition(j.motor.HandBody(1));
+        h.target = j.ch.MouthPos() + F * 0.05f - hang;
+        j.in.mouth = k > 60 ? MouthAction::Bite : MouthAction::Closed;
+        live(1 / 60.f);
+    }
+    CHECK(w.FoodLeftG(23) < 70.f);                      // she took several bites
+    CHECK(b.Get(Need::Hunger) < hunger0);
+    j.in.mouth = MouthAction::Closed;
+    h.grip = false;
+    h.reach = false;
+    live(1.0);
+
+    // pee standing: it lands on the floor and runs down her legs
+    const float bl0 = b.BladderMl();
+    j.in.pee = true;
+    live(3.0);
+    j.in.pee = false;
+    live(0.5);
+    CHECK(b.BladderMl() < bl0 - 30.f);
+    CHECK(w.PuddleMl(Liquid::Urine) > 10.f);
+    const float floorUrine = w.PuddleMl(Liquid::Urine);
+
+    // sit on the toilet and pee: it goes in the bowl
+    j.in.stance = Stance::SitSeat;
+    live(2.5);
+    CHECK(j.motor.CurrentStance() == Stance::SitSeat);
+    j.in.pee = true;
+    live(3.0);
+    j.in.pee = false;
+    live(0.5);
+    CHECK(w.ContainerMl(21, Liquid::Urine) > 25.f);
+    CHECK(w.PuddleMl(Liquid::Urine) < floorUrine + 5.f);
+
+    // and her mind worked out what drinking and biting do for her
+    auto causes = [&](const char* effect) {
+        const uint32_t e = mind.graph.Find(NodeKind::Effect, effect);
+        return e ? mind.graph.In(e, Rel::Causes).size() : size_t(0);
+    };
+    CHECK(causes("I'm less thirsty") >= 1);
+    CHECK(causes("I'm less hungry") >= 1);
+    CHECK(mind.graph.Find(NodeKind::Action, "pee") != 0);
+}
+
 static void TestStepAndClimb() {
     {   // a 20 cm step: she just walks up onto it
         World w;
@@ -990,6 +1226,8 @@ int main(int argc, char** argv) {
     RUN(TestCharacterImport);
     RUN(TestBodyState);
     RUN(TestWardrobeRules);
+    RUN(TestMatter);
+    RUN(TestWaitingAreaNeeds, content);
     RUN(TestMotorPressesButton, content);
     RUN(TestMotorWalksAndStopsAtWall, content);
     RUN(TestMotorGripsAndLifts, content);
@@ -1000,6 +1238,7 @@ int main(int argc, char** argv) {
     RUN(TestCarriesThings, content);
     RUN(TestStances);
     RUN(TestSitOnSeat);
+    RUN(TestJennyDrinksEatsPees);
     RUN(TestStepAndClimb);
     RUN(TestLipSync);
     RUN(TestSleep);

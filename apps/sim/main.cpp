@@ -18,6 +18,7 @@
 #include "character/Character.h"
 #include "character/BodyState.h"
 #include "character/Dangles.h"
+#include "character/BodyMatter.h"
 #include "mind/Learner.h"
 #include "mind/Perception.h"
 #include "character/Face.h"
@@ -57,6 +58,8 @@ struct Body {
     Motor motor;
     MotorIntent intent;
     LipSync lips;
+    BodyMatter matter;   // mouth, skin and bladder vs. the world's water and food
+    BodyMatterFeel felt;  // accumulated between mind ticks
     // her mind's inputs and memory (everything goes through the sensor firewall)
     Perception eyes;
     Learner mind;
@@ -183,7 +186,9 @@ struct Body {
     void Update(float dt, float ambientC, World& world) {
         if (!loaded) return;
         // physiology
-        inputs.ambientC = ambientC;
+        // the air where she is (heaters warm it locally)
+        inputs.ambientC = world.AirTemperature(ch.BonePos(ch.Rig().pelvis) + Vec3{0, 0.4f, 0});
+        (void)ambientC;
         inputs.clothingClo = wardrobe.TotalClo();
         inputs.exertion = posture.motion == TestMotion::Bounce ? 0.6f : posture.motion == TestMotion::WalkInPlace ? 0.35f
                                                                                                    : motor.Feedback().exertion;
@@ -222,6 +227,15 @@ struct Body {
         fi.asleep = inputs.sleeping ? 1.f : 0.f;
         face.Update(ch, fi, dt);
         lips.Update(ch, dt);
+        // drinking, biting, peeing (asleep: nothing)
+        {
+            MotorIntent mi = intent;
+            if (state.asleep) { mi.mouth = MouthAction::Closed; mi.pee = false; }
+            matter.Step(world, ch, motor, mi, state, wardrobe.Covers("groin"), dt);
+            felt.drankMl += matter.Feel().drankMl; felt.biteG += matter.Feel().biteG;
+            felt.chewing |= matter.Feel().chewing; felt.peeing |= matter.Feel().peeing;
+            if (matter.Jaw() > 0.01f) ch.SetMorph("jawOpen", std::max(ch.GetMorph("jawOpen"), matter.Jaw()));
+        }
 
         ch.Skin();
         const std::vector<bool> vis = wardrobe.MeshVisibility(asset.meshes.size());
@@ -235,7 +249,8 @@ struct Body {
         if (mindAcc >= 0.1f) {
             mindAcc = 0.f;
             if (!state.asleep) {
-                eyes.Sense(world, motor, ch, &state, mindT, percept);
+                eyes.Sense(world, motor, ch, &state, mindT, percept, &felt);
+                felt = {};
                 mind.Observe(percept);
             }
         }
@@ -340,7 +355,8 @@ int main(int argc, char** argv) {
     bool climbArg = false;
     std::string demoArg;
     std::string memoryArg, mindOut;
-    bool showMindArg = false;   // --memory DIR (persistent memory), --mind-out DIR (write report/html after settle)   // --demo switch|lever|crate|battery: scripted hand use (same moves the tests check)
+    bool showMindArg = false;
+    std::vector<std::string> actuateArgs;   // --actuate NAME: hold/flip a button, switch or lever (operator test)   // --memory DIR (persistent memory), --mind-out DIR (write report/html after settle)   // --demo switch|lever|crate|battery: scripted hand use (same moves the tests check)
     std::string sayArg;
     float spawn[3] = {0, 0, 0}, reachR[3] = {0, 0, 0}, walkTo[2] = {0, 0};
     bool powerAll = false, lightsOff = false, customCam = false;
@@ -371,6 +387,7 @@ int main(int argc, char** argv) {
         else if (arg == "--memory" && a + 1 < argc) memoryArg = argv[++a];
         else if (arg == "--mind-out" && a + 1 < argc) mindOut = argv[++a];
         else if (arg == "--show-mind") showMindArg = true;
+        else if (arg == "--actuate" && a + 1 < argc) actuateArgs.push_back(argv[++a]);
         else if (arg == "--cam" && a + 6 < argc) { for (float& c : cam) c = std::stof(argv[++a]); customCam = true; }
         else zonePath = arg;
     }
@@ -425,6 +442,9 @@ int main(int argc, char** argv) {
     if (stanceArg >= 0) body->intent.stance = static_cast<Stance>(stanceArg);
     if (!sayArg.empty()) body->lips.Say(sayArg);
     if (climbArg) { body->intent.climb = true; body->intent.moveDir = {0, 0, 1}; }
+    for (const std::string& nm : actuateArgs)
+        for (const Entity& e : world.GetZone().entities)
+            if (e.name == nm) world.DebugActuate(e.id, true);
     if (settle > 0.f) {
         for (float t = 0; t < settle; t += 1 / 60.f) {
             for (const auto& [at, st] : stanceSeq) if (t >= at && t < at + 1 / 60.f) body->intent.stance = static_cast<Stance>(st);
@@ -511,6 +531,11 @@ int main(int argc, char** argv) {
         body->intent.climb = IsKeyDown(KEY_SPACE) || climbArg;
         if (IsKeyPressed(KEY_O)) body->lips.Say("Hello? Is anyone there? I don't know how I got here.");
         if (IsKeyPressed(KEY_N)) body->showMind = !body->showMind;
+        // her mouth and bladder: I open mouth (toggle), B bite (hold), L pee (hold)
+        if (IsKeyPressed(KEY_I)) body->intent.mouth = body->intent.mouth == MouthAction::Open ? MouthAction::Closed : MouthAction::Open;
+        if (IsKeyDown(KEY_B)) body->intent.mouth = MouthAction::Bite;
+        else if (IsKeyReleased(KEY_B)) body->intent.mouth = MouthAction::Closed;
+        body->intent.pee = IsKeyDown(KEY_L);
         if (IsKeyPressed(KEY_F9)) { body->SaveMind(memoryArg.empty() ? "mind_out" : memoryArg); status = "Jenny's memory written (html, report, context)"; }
         if (IsKeyPressed(KEY_V)) for (auto& h : body->intent.hands) if (h.reach) h.target = h.target + Vec3{0, 0.25f, 0};   // lift
 
@@ -548,7 +573,12 @@ int main(int argc, char** argv) {
                 DrawText(TextFormat("hygiene %.0f bored %.0f libido %.0f  clo %.2f", st.Get(Need::Hygiene), st.Get(Need::Boredom),
                                     st.Get(Need::Libido), body->wardrobe.TotalClo()), x, 74, 16, LIGHTGRAY);
                 DrawText(wr.c_str(), x, 98, 14, PINK);
-                DrawText(body->lastWardrobeMsg.c_str(), x, 118, 14, SKYBLUE);
+                {
+                    const BodyMatterFeel& bf = body->matter.Feel();
+                    DrawText(TextFormat("air %.1fC  bladder %.0fml (+%.0f)  skin wet %.2f%s%s%s%s", world.AirTemperature(body->motor.Position() + Vec3{0, 1.f, 0}),
+                                        st.BladderMl(), st.absorbing, st.skinWater, bf.drankMl > 0 ? "  DRINKING" : "", bf.chewing ? "  CHEWING" : "",
+                                        bf.peeing ? "  PEEING" : "", bf.soakedClothes ? " (in underwear)" : ""), x, 118, 14, SKYBLUE);
+                }
                 const MotorFeedback& mf = body->motor.Feedback();
                 DrawText(TextFormat("stance %s%s%s%s  %.2f m/s%s", StanceName(mf.stance), mf.inTransition ? " (moving)" : "",
                                     mf.climbing ? " CLIMB" : "", mf.atEdge ? " EDGE" : "", mf.speed, st.asleep ? "  ASLEEP" : ""), x, 136, 14, YELLOW);
@@ -567,7 +597,7 @@ int main(int argc, char** argv) {
             DrawText("OPERATOR VIEW (Jenny never sees this)", 16, 14, 18, ORANGE);
             DrawText(TextFormat("%s   t = %.1fs   %d fps", world.GetZone().name.c_str(), world.SimTime(), GetFPS()), 16, 38, 18, RAYWHITE);
             DrawText("1 Waiting Area  2 Test Zone 01  R reset  H hud", 16, 62, 16, LIGHTGRAY);
-            DrawText("RMB look WASD/QE fly LMB grab F push | Jenny: MMB/arrows move Z stance Space climb J/U reach G grip V lift X drop O talk N mind", 16, 82, 16, LIGHTGRAY);
+            DrawText("RMB look WASD/QE fly LMB grab F push | Jenny: MMB/arrows move Z stance Space climb J/U reach G grip V lift X drop O talk N mind I mouth B bite L pee", 16, 82, 16, LIGHTGRAY);
             DrawText(status.c_str(), 16, 106, 16, SKYBLUE);
 
             if (hasHit) {

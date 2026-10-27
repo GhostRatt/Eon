@@ -54,6 +54,7 @@ add_library(eon_core STATIC
     engine/core/Circuit.cpp
     engine/core/Zone.cpp
     engine/core/World.cpp
+    engine/core/World_Matter.cpp
     engine/core/Physics.cpp)
 target_include_directories(eon_core PUBLIC engine)
 target_link_libraries(eon_core PUBLIC nlohmann_json::nlohmann_json PRIVATE Jolt)
@@ -74,7 +75,8 @@ add_library(eon_character STATIC
     engine/character/BodyState.cpp
     engine/character/Wardrobe.cpp
     engine/character/Motor.cpp
-    engine/character/LipSync.cpp)
+    engine/character/LipSync.cpp
+    engine/character/BodyMatter.cpp)
 target_include_directories(eon_character PUBLIC engine)
 target_link_libraries(eon_character PUBLIC eon_core PRIVATE ufbx)
 find_package(Threads REQUIRED)

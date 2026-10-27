@@ -85,6 +85,10 @@ public:
     void PoseFingers(int side, float curl, float spread, float thumb, float indexCurl = -1.f);   // indexCurl >= 0: pointing
     bool HasFingers(int side) const { return hands_[side].valid; }
 
+    // Body openings in world space (follow the head/pelvis): where she drinks/bites, and where she pees from.
+    Vec3 MouthPos() const;
+    Vec3 GroinPos() const;
+
     // Skin points of each foot (heel, sole, toes, instep) in their bone's frame, for floor contact.
     float LowestFootPoint(int side) const;
     void BuildContactSamples();
@@ -127,6 +131,7 @@ private:
         Vec3 spreadAxis[5];                    // at the first joint, in its frame
     };
     HandFrame hands_[2];
+    Vec3 mouthLocal_, groinLocal_;   // in the head / pelvis bone frames
     struct Sample { int bone; Vec3 local; };
     std::vector<Sample> footSamples_[2];
     void RecomputeSubtree(int bone);

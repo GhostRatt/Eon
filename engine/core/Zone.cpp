@@ -42,6 +42,12 @@ Part MakePart(const Entity& e) {
     } else if (e.type == "button" || e.type == "switch" || e.type == "lever") {
         p.kind = PartKind::Switch;
         p.closed = q.value("closed", false);
+    } else if (e.type == "heater") {
+        // a resistive element: hot when current flows through it
+        p.kind = PartKind::Resistor;
+        p.ratedPower = P(q, "ratedPower", 120.0);
+        const double ratedV = P(q, "ratedVoltage", 12.0);
+        p.resistance = P(q, "resistance", ratedV * ratedV / p.ratedPower);
     } else if (e.type == "motor") {
         p.kind = PartKind::Motor;
         p.resistance = P(q, "resistance", 2.0);
@@ -57,7 +63,7 @@ Part MakePart(const Entity& e) {
 
 bool IsElectrical(const std::string& type) {
     return type == "battery" || type == "wire" || type == "lamp" || type == "button" ||
-           type == "switch" || type == "lever" || type == "motor" || type == "resistor";
+           type == "switch" || type == "lever" || type == "motor" || type == "resistor" || type == "heater";
 }
 
 Entity* Zone::Find(int id) {

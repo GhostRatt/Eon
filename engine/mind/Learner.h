@@ -49,6 +49,10 @@ private:
     void Happened(const std::string& what, uint32_t thingNode, double t);
     void Property(uint32_t node, const std::string& prop, bool held, double t, Source s = Source::Observed);
     void Spatial(const Percept& p);
+    void SelfHappened(const std::string& what, double t);   // an effect on her own body ("I'm less thirsty")
+    uint32_t NearMouth(const Percept& p) const;
+    double lastDrink_ = -1e9, lastBite_ = -1e9;
+    bool wasPeeing_ = false;
 
     std::unordered_map<uint32_t, TrackMem> tracks_;
     std::unordered_map<std::string, int> nameUse_;

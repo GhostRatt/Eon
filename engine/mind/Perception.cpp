@@ -17,7 +17,8 @@ uint32_t Perception::Track(int entity) {
     return id;
 }
 
-void Perception::Sense(const World& world, const Motor& motor, const Character& ch, const BodyState* body, double t, Percept& out) {
+void Perception::Sense(const World& world, const Motor& motor, const Character& ch, const BodyState* body, double t, Percept& out,
+                       const BodyMatterFeel* matter) {
     out = Percept{};
     out.t = t;
     zoneKey_ = std::hash<std::string>{}(world.GetZone().name) & 0xffffffffffull;
@@ -129,6 +130,16 @@ void Perception::Sense(const World& world, const Motor& motor, const Character& 
         feel("tired", (body->Get(Need::Fatigue) - 45.f) / 45.f);
         feel("need to pee", (body->Get(Need::Bladder) - 55.f) / 40.f);
         feel("bored", (body->Get(Need::Boredom) - 45.f) / 45.f);
+        feel("wet", body->skinWater * 1.6f);
+    }
+    out.airC = world.AirTemperature(out.eye - Vec3{0, 0.5f, 0});
+    if (out.airC > 26.f) out.feelings.push_back({"warm air", std::min(1.f, (out.airC - 26.f) / 8.f + 0.4f)});
+    if (out.airC < 17.f) out.feelings.push_back({"chilly air", std::min(1.f, (17.f - out.airC) / 8.f + 0.4f)});
+    if (matter) {
+        out.drankMl = matter->drankMl;
+        out.biteG = matter->biteG;
+        out.chewing = matter->chewing;
+        out.peeing = matter->peeing;
     }
 }
 

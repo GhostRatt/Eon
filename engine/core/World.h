@@ -38,6 +38,19 @@ struct RayHit {
     float dist = 0.f;
 };
 
+// ---- Matter: liquids, food, heat (World_Matter.cpp) ----
+enum class Liquid : uint8_t { Water, Urine, Count };
+const char* LiquidName(Liquid l);
+
+// What reached a body opening this step (her mouth), and what landed on her skin.
+struct Intake {
+    float ml[static_cast<int>(Liquid::Count)] = {};   // swallowed
+    float kcal = 0.f;                                 // food bitten off
+    float foodG = 0.f;
+    float skinMl = 0.f;                               // liquid that landed on her body
+    float skinUrineMl = 0.f;
+};
+
 // Runs one zone: Jolt physics + electricity, coupled every fixed step.
 class World {
 public:
@@ -110,6 +123,21 @@ public:
 
     void BuildRenderFrame(RenderFrame& out) const;
 
+    // ---- Matter (liquids flow, fill, pour, puddle and evaporate; food gets bitten; heaters warm the air) ----
+    float AirTemperature(const Vec3& p) const;           // °C here (zone ambient + nearby heaters)
+    // Her mouth this step: open mouths take in liquid that reaches them. Bite() takes a bite of food at the mouth.
+    void SetMouth(const Vec3& pos, bool open) { mouth_ = pos; mouthOpen_ = open; hasMouth_ = true; }
+    float Bite(const Vec3& mouth, float reach = 0.07f);   // grams bitten (0 = nothing there)
+    // A liquid stream leaving her body this step (peeing): origin, initial velocity, ml/s.
+    void SetBodyStream(const Vec3& origin, const Vec3& vel, float mlPerSec, Liquid l);
+    void ClearBodyStream() { bodyStream_.rate = 0.f; }
+    Intake TakeIntake();                                  // accumulated since the last call
+    // Tests/editor: liquid held by a container or bowl entity, and total in puddles.
+    float ContainerMl(int entityId, Liquid l = Liquid::Count) const;   // Count = all liquids
+    float PuddleMl(Liquid l = Liquid::Count) const;
+    int PuddleCount() const;
+    float FoodLeftG(int entityId) const;
+
 private:
     enum class Role : uint8_t { Main, Plunger, Lever, RopeSegment, Clip, Agent };
 
@@ -148,6 +176,9 @@ private:
         ConstraintHandle hinge = kNoConstraint;
         Vec3 axisLocal{0, 1, 0}, hingeLocal{0, 0, 1}, longLocal{1, 0, 0};
         float limit = 0.3f, detent = 0.03f, halfLong = 0.02f, halfP = 0.006f;
+        bool isLever = false;
+        float handleHalf = 0.f;
+        Vec3 pivot;
     };
     struct IdealLink { int partA, termA, partB, termB; };
     struct PushRt { int body = -1; Vec3 local; Vec3 force; float timeLeft = -1.f; int tag = 0; };
@@ -193,6 +224,31 @@ private:
     std::vector<PushRt> pushes_;
     GrabRt grab_;
     struct DriveRt { int body = -1; Vec3 target; float maxForce = 0.f, freq = 12.f, damping = 1.f; };
+    // matter runtime
+    struct TapRt { int entity = 0, body = -1; Vec3 outLocal, dirLocal{0, -1, 0}; float rate = 60.f, speed = 0.6f; int valve = 0; bool powered = false; Liquid kind = Liquid::Water; int jets = 1; float spread = 0.f; };
+    struct ContainerRt { int entity = 0, body = -1; float capacity = 300.f; float ml[int(Liquid::Count)] = {}; Vec3 half; int drain = 0; bool dirtyDrain = false; };
+    struct PuddleRt { Vec3 pos; float ml[int(Liquid::Count)] = {}; int id = 0; };
+    struct FoodRt { int entity = 0, body = -1; float grams = 100.f, left = 100.f, kcalPerG = 0.6f, waterPerG = 0.8f; Vec3 size; bool gone = false; };
+    struct HeaterRt { int entity = 0, body = -1; };
+    struct StreamRt { Vec3 origin, vel; float rate = 0.f; Liquid kind = Liquid::Water; int fromContainer = -1; bool fromBody = false; };
+    struct StreamDraw { std::vector<Vec3> pts; Liquid kind; };
+    void BuildMatter(Entity& e, int mainBody);
+    void StepMatter(float dt);
+    void FlowStream(const StreamRt& s, float dt, StreamDraw* draw);
+    void AddToPuddle(const Vec3& p, Liquid l, float ml);
+    void AppendMatterPieces(RenderFrame& out) const;
+    bool ValveOpen(int valveEntity) const;
+    std::vector<TapRt> taps_;
+    std::vector<ContainerRt> containers_;
+    std::vector<PuddleRt> puddles_;
+    std::vector<FoodRt> foods_;
+    std::vector<HeaterRt> heaters_;
+    std::vector<StreamDraw> streamDraw_;
+    StreamRt bodyStream_;
+    Intake intake_;
+    Vec3 mouth_;
+    bool mouthOpen_ = false, hasMouth_ = false;
+    int nextPuddleId_ = 1;
     struct KinRt { int body = -1; Vec3 pos; Quat rot; };
     std::vector<DriveRt> drives_;
     struct SteadyRt { int body = -1; Quat rot; float maxTorque = 0.f; };

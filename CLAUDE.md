@@ -30,6 +30,10 @@ Raw commands, if needed:
 - The Primrose model lives outside git: `../Assets for Claude/RyanReos_PrimroseDeluxe_FullArchive/...` (symlinked in the container). Tests use `tests/data/test_rig.fbx`.
 - Zones are generated: edit `tools/make_zones.py`, then `python3 tools/make_zones.py content/zones`.
 
+## World content
+- Zone entity types: static/dynamic boxes, `battery` `wire` (hidden = in-wall, no body) `lamp` `button` `switch` `lever` `motor` `resistor` `heater`, matter: `tap` (valve=entity id, rate, speed, jets, spread) `container` (capacity, water) `bowl` (static container, drain=valve id) `food` (grams, kcalPerG, waterPerG).
+- Operator test of fixtures: sim `--actuate NAME` (holds/flips it); in tests use `World::DebugActuate`, `ContainerMl`, `PuddleMl`, `AirTemperature`, `FoodLeftG`.
+
 ## Rules of the project
 - Sensor firewall: Jenny's mind only gets `engine/mind/Perception` output. No entity names, types or ids ever reach `Learner`/`MemoryGraph`.
 - She acts only through motor primitives (`MotorIntent`). There is no "use object" command; buttons, levers and wires are physical.

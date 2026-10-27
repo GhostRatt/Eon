@@ -73,6 +73,8 @@ void World::Reset() {
     ++generation_;
     joints_.clear();
     grab_ = {};   // its bodies were removed by Clear()
+    taps_.clear(); containers_.clear(); puddles_.clear(); foods_.clear(); heaters_.clear(); streamDraw_.clear();
+    bodyStream_ = {}; intake_ = {}; hasMouth_ = mouthOpen_ = false;
 
     zone_.BuildCircuit(circuit_);
     circuit_.ClearConnections();
@@ -135,6 +137,8 @@ int World::FindTerminal(int entity, int term) const {
 }
 
 void World::BuildEntity(Entity& e) {
+    // hidden wires run inside walls: electrical only (ideal links), nothing physical or visible
+    if (e.type == "wire" && e.params.value("hidden", false)) return;
     const Quat rot = Quat::FromEulerDeg(e.rotDeg);
     const Vec3 he = e.size * 0.5f;
     const std::string material = e.params.value("material", std::string());
@@ -232,6 +236,9 @@ void World::BuildEntity(Entity& e) {
         ld.pos = pivot + q.Rotate(Pw * (isLever ? handleHalf : s.halfP));
         ld.rot = (q * rot * Quat::FromBasis(u, p, h)).Normalized();
         ld.halfExtent = isLever ? Vec3{0.016f, handleHalf, 0.016f} : Vec3{s.halfLong, s.halfP, halfH};
+        s.isLever = isLever;
+        s.handleHalf = handleHalf;
+        s.pivot = pivot;
         ld.mass = P(e.params, "leverMass", isLever ? 0.4f : 0.05f);   // rocker + snap mechanism; too light and contact forces spin it wildly
         ld.angularDamping = 2.f;
         ld.group = group;
@@ -242,6 +249,7 @@ void World::BuildEntity(Entity& e) {
                                      -s.limit, s.limit, 0.0005f);
         switches_.push_back(s);
     }
+    BuildMatter(e, main);
 }
 
 void World::BuildRope(Entity& wire, const std::vector<std::pair<int, int>>& endLinks) {
@@ -433,6 +441,7 @@ void World::FixedStep(float dt) {
     UpdateSwitchStates();
     UpdateConnections();
     circuit_.Step(dt);
+    StepMatter(dt);
 }
 
 void World::ApplyForces(float dt) {
@@ -626,6 +635,19 @@ void World::DebugActuate(int entityId, bool on) {
         const Vec3 Hw = bq.Rotate(s.hingeLocal);
         const Vec3 U = lq.Rotate({1, 0, 0});
         const float want = on ? 1.f : -1.f;
+        if (s.isLever) {
+            // a lever: push its tip around the hinge, the way a hand throws it
+            const Vec3 tip = lp + lq.Rotate(Vec3{0, s.handleHalf * 0.9f, 0});
+            PushRt p;
+            p.body = s.lever;
+            p.local = {0, s.handleHalf * 0.9f, 0};
+            p.force = (Hw * want).Cross(tip - s.pivot).Normalized() * 12.f;
+            p.timeLeft = 0.4f;
+            p.tag = entityId;
+            pushes_.push_back(p);
+            physics_->Wake(bodies_[s.lever].h);
+            continue;
+        }
         // Pick the rocker end whose push (into the plate) turns the lever toward the wanted side.
         const float sideSign = (U.Cross(-Pw)).Dot(Hw) * want > 0 ? 1.f : -1.f;
         PushRt p;
@@ -775,6 +797,7 @@ void World::BuildRenderFrame(RenderFrame& out) const {
         }
         out.pieces.push_back(p);
     }
+    AppendMatterPieces(out);
 }
 
 } // namespace eon

@@ -546,6 +546,28 @@ static void TestStances() {
         if (wt.s == Stance::Prone) CHECK(j.ch.BonePos(r.head).y < 0.45f);                  // head down near the floor
         if (wt.s == Stance::LieBack) CHECK(j.ch.BonePos(r.head).y < 0.35f);
     }
+
+    // rolling over: back -> left side -> front. The head stays where it was; she ends up facing the other way.
+    j.in.stance = Stance::LieBack;
+    j.Run(w, 8.0);
+    CHECK(j.motor.CurrentStance() == Stance::LieBack);
+    const Vec3 head0 = j.ch.BonePos(r.head);
+    const float yaw0 = j.motor.Yaw();
+    j.in.stance = Stance::LieLeft;
+    j.Run(w, 2.0);
+    CHECK(j.motor.CurrentStance() == Stance::LieLeft);
+    CHECK(j.ch.BonePos(r.upperarm[0]).y < j.ch.BonePos(r.upperarm[1]).y - 0.15f);       // left shoulder down
+    CHECK(j.ch.BonePos(r.pelvis).y < 0.3f);
+    j.in.stance = Stance::Prone;
+    j.Run(w, 2.0);
+    CHECK(j.motor.CurrentStance() == Stance::Prone);
+    const Vec3 head1 = j.ch.BonePos(r.head);
+    CHECK(Distance(Vec3{head0.x, 0, head0.z}, Vec3{head1.x, 0, head1.z}) < 0.15f);
+    CHECK(std::fabs(std::fabs(j.motor.Yaw() - yaw0) - 3.14159265f) < 0.05f);
+    j.in.stance = Stance::LieRight;                       // and roll back up onto the right side
+    j.Run(w, 2.0);
+    CHECK(j.motor.CurrentStance() == Stance::LieRight);
+    CHECK(j.ch.BonePos(r.upperarm[1]).y < j.ch.BonePos(r.upperarm[0]).y - 0.15f);
 }
 
 static void TestStepAndClimb() {

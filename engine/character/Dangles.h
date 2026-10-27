@@ -27,6 +27,7 @@ public:
     size_t BoneCount() const;
 
     DangleSettings settings;
+    float groundY = -1e9f;     // floor/bed under her: strands lie on it instead of going through
 
 private:
     struct Chain {

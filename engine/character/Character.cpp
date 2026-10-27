@@ -69,6 +69,14 @@ void RigMap::Build(const CharacterAsset& a) {
         ball[i] = f({"ball_" + S, "toes_01." + S, "toe." + S, L + "toebase"});
         breast[i] = f({"breast_" + S, "breast." + S, "breast" + S, L + "breast", "boob_" + S, "boob." + S, "chest_" + S});
         glute[i] = f({"glute_" + S, "butt_" + S, "butt." + S, "buttock_" + S, "buttock." + S, L + "buttock", "hip_" + S});
+        const char* fn[5] = {"thumb", "index", "middle", "ring", "pinky"};
+        const char* mx[5] = {"Thumb", "Index", "Middle", "Ring", "Pinky"};
+        for (int k = 0; k < 5; ++k)
+            for (int j = 0; j < 3; ++j) {
+                const std::string n = fn[k], J = std::to_string(j + 1);
+                finger[i][k][j] = f({n + "_0" + J + "_" + S, n + J + "." + S, n + ".0" + J + "." + U, n + "_0" + J + "." + S,
+                                     L + "hand" + mx[k] + J, (k == 4 ? std::string("little") : n) + "_0" + J + "_" + S});
+            }
     }
 }
 
@@ -137,6 +145,8 @@ bool Character::Init(const CharacterAsset* asset) {
     ResetPose();
     FitCapsules();
     SetupSoftBones();
+    SetupHands();
+    BuildContactSamples();
     limbDelta_.assign(4, Vec3{});
     return true;
 }
@@ -167,6 +177,7 @@ float Character::RefitFloor() {
     floorOffset = -lo;
     placement.t.y += floorOffset - old;
     ComputeWorld();
+    BuildContactSamples();   // foot shape changed with the morphs
     return floorOffset - old;
 }
 
@@ -232,6 +243,134 @@ void Character::SolveTwoBone(int a, int b, int c, const Vec3& target, const Vec3
     const int pc = asset_->bones[c].parent;
     local_[c].r = (world_[pc].r.Conjugate() * endRot).Normalized();
     RecomputeSubtree(c);
+}
+
+// ---------------- Hands ----------------
+
+void Character::SetupHands() {
+    // Hand frame from the bind pose: fingers point from the knuckles to the tips, "across" runs pinky -> index.
+    // Palm side by handedness (left: fingers x across, right: the reverse) so it holds for any bind pose.
+    for (int i = 0; i < 2; ++i) {
+        HandFrame& h = hands_[i];
+        h = {};
+        const int hb = rig_.hand[i];
+        const auto& F = rig_.finger[i];
+        if (hb < 0 || F[1][0] < 0 || F[4][0] < 0 || F[2][0] < 0 || F[2][2] < 0) continue;
+        const Vec3 fingers = (world_[F[2][0]].t - world_[hb].t).Normalized();   // along the palm (wrist -> knuckle)
+        Vec3 across = world_[F[1][0]].t - world_[F[4][0]].t;
+        across = (across - fingers * across.Dot(fingers)).Normalized();
+        const Vec3 palm = fingers.Cross(across) * (i == 0 ? 1.f : -1.f);
+        const Quat inv = world_[hb].r.Conjugate();
+        h.palmLocal = inv.Rotate(palm);
+        h.fingerLocal = inv.Rotate(fingers);
+        for (int k = 0; k < 5; ++k) {
+            const int a = F[k][0];
+            if (a < 0) continue;
+            const int tip = F[k][2] >= 0 ? F[k][2] : F[k][1] >= 0 ? F[k][1] : a;
+            Vec3 d = (world_[tip].t - world_[a].t).Normalized(fingers);
+            if (tip == a) d = fingers;
+            Vec3 axis;
+            if (k == 0) {
+                // the thumb folds across the palm toward the little finger
+                axis = d.Cross((palm * 0.7f - across * 0.7f).Normalized()).Normalized(across);
+            } else {
+                axis = d.Cross(palm).Normalized(across);
+            }
+            for (int j = 0; j < 3; ++j)
+                if (F[k][j] >= 0) h.curlAxis[k][j] = world_[F[k][j]].r.Conjugate().Rotate(axis);
+            h.spreadAxis[k] = world_[a].r.Conjugate().Rotate(d.Cross(across).Normalized(palm));
+        }
+        h.valid = true;
+    }
+}
+
+void Character::BuildContactSamples() {
+    for (int i = 0; i < 2; ++i) {
+        footSamples_[i].clear();
+        const int fb = rig_.foot[i], bb = rig_.ball[i];
+        if (fb < 0) continue;
+        std::vector<Sample> all;
+        for (const SkinMesh& m : asset_->meshes) {
+            if (m.garment >= 0) continue;
+            std::vector<Vec3> rest = m.pos;
+            for (const Morph& mo : m.morphs) {
+                const float w = GetMorph(mo.name);
+                if (std::fabs(w) < 1e-4f) continue;
+                for (size_t k = 0; k < mo.index.size(); ++k) rest[mo.index[k]] += mo.dpos[k] * w;
+            }
+            for (size_t v = 0; v < rest.size(); ++v) {
+                int dom = m.joints[v][0];
+                float dw = m.weights[v][0];
+                for (int k = 1; k < 4; ++k) if (m.weights[v][k] > dw) { dw = m.weights[v][k]; dom = m.joints[v][k]; }
+                if (dom != fb && dom != bb) continue;
+                all.push_back({dom, asset_->bones[dom].invBind.Point(rest[v])});
+            }
+        }
+        const size_t step = std::max<size_t>(1, all.size() / 120);
+        for (size_t k = 0; k < all.size(); k += step) footSamples_[i].push_back(all[k]);
+    }
+}
+
+float Character::LowestFootPoint(int i) const {
+    float lo = 1e9f;
+    int lastBone = -1;
+    Mat4 M;
+    for (const Sample& s : footSamples_[i]) {
+        if (s.bone != lastBone) { M = Mat4::FromTransform(world_[s.bone]); lastBone = s.bone; }
+        lo = std::min(lo, M.Point(s.local).y);
+    }
+    return footSamples_[i].empty() ? (rig_.foot[i] >= 0 ? world_[rig_.foot[i]].t.y - 0.07f : 0.f) : lo;
+}
+
+Vec3 Character::PalmNormal(int i) const {
+    const int hb = rig_.hand[i];
+    if (hb < 0 || !hands_[i].valid) return {0, -1, 0};
+    return world_[hb].r.Rotate(hands_[i].palmLocal);
+}
+
+Vec3 Character::FingerDir(int i) const {
+    const int hb = rig_.hand[i];
+    if (hb < 0 || !hands_[i].valid) return {0, -1, 0};
+    return world_[hb].r.Rotate(hands_[i].fingerLocal);
+}
+
+void Character::OrientHand(int i, const Vec3& palmIn, const Vec3& fingersIn, float weight, float maxRad) {
+    const int hb = rig_.hand[i];
+    if (hb < 0 || !hands_[i].valid || weight <= 0.f) return;
+    const Vec3 n0 = PalmNormal(i), f0 = FingerDir(i);
+    const Vec3 n1 = palmIn.Normalized(n0);
+    Vec3 f1 = fingersIn - n1 * fingersIn.Dot(n1);
+    f1 = f1.Normalized(f0 - n1 * f0.Dot(n1));
+    const Vec3 s0 = f0.Cross(n0).Normalized(), s1 = f1.Cross(n1).Normalized();
+    const Quat cur = Quat::FromBasis(f0, s0.Cross(f0), s0);
+    const Quat want = Quat::FromBasis(f1, s1.Cross(f1), s1);
+    Quat d = (want * cur.Conjugate()).Normalized();
+    Vec3 axis;
+    float ang;
+    d.ToAxisAngle(axis, ang);
+    if (ang > kPi) ang -= 2.f * kPi;
+    ang = std::clamp(ang * std::clamp(weight, 0.f, 1.f), -maxRad, maxRad);
+    RotateBoneWorld(hb, Quat::AxisAngle(axis, ang));
+}
+
+void Character::PoseFingers(int i, float curl, float spread, float thumb) {
+    const HandFrame& h = hands_[i];
+    if (!h.valid) return;
+    const auto& F = rig_.finger[i];
+    // knuckle, middle and end joints bend by different amounts (a real fist: ~80/100/70 degrees)
+    const float jointK[3] = {1.35f, 1.65f, 1.1f};
+    const float spreadK[5] = {0.f, 0.2f, 0.f, -0.14f, -0.28f};
+    for (int k = 0; k < 5; ++k) {
+        const float c = k == 0 ? thumb : std::clamp(curl * (1.f + 0.06f * (k - 1)), -0.15f, 1.f);
+        for (int j = 0; j < 3; ++j) {
+            const int b = F[k][j];
+            if (b < 0) continue;
+            if (j == 0 && k > 0 && std::fabs(spread) > 1e-3f)
+                RotateBoneWorld(b, Quat::AxisAngle(world_[b].r.Rotate(h.spreadAxis[k]), spread * spreadK[k] * (1.f - 0.6f * std::max(0.f, c))));
+            const float a = k == 0 ? c * (j == 0 ? 0.55f : j == 1 ? 0.7f : 0.9f) : c * jointK[j];
+            if (std::fabs(a) > 1e-4f) RotateBoneWorld(b, Quat::AxisAngle(world_[b].r.Rotate(h.curlAxis[k][j]), a));
+        }
+    }
 }
 
 // ---------------- Capsules fitted to the skin ----------------

@@ -138,6 +138,13 @@ void DangleSim::Update(Character& ch, float dt) {
                         const float l = off.Length();
                         if (l < minD) c.pos[i] = q + off.Normalized({0, 0, -1}) * minD;
                     }
+                    // the floor: strands rest on it and drag a little
+                    const float floorY = groundY + settings.radius + 0.02f;
+                    if (c.pos[i].y < floorY) {
+                        c.pos[i].y = floorY;
+                        c.prev[i] = c.prev[i] + (c.pos[i] - c.prev[i]) * 0.5f;
+                        c.prev[i].y = floorY;
+                    }
                 }
             }
         }

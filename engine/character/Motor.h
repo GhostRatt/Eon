@@ -17,7 +17,7 @@ struct HandIntent {
     float effort = 0.5f;       // 0..1 of max arm strength (pressing harder, lifting heavier)
 };
 
-enum class Stance : int { Stand, Crouch, Kneel, Sit, Crawl, Prone, LieBack, Count };
+enum class Stance : int { Stand, Crouch, Kneel, Sit, Crawl, Prone, LieBack, LieLeft, LieRight, Count };
 const char* StanceName(Stance s);
 
 struct MotorIntent {
@@ -61,8 +61,9 @@ public:
     int HandBody(int i) const { return hand_[i]; }
     float Lean() const { return lean_; }
     Stance CurrentStance() const { return stance_; }
-    bool Lying() const { return stance_ == Stance::Prone || stance_ == Stance::LieBack; }
+    bool Lying() const { return stance_ == Stance::Prone || stance_ == Stance::LieBack || stance_ == Stance::LieLeft || stance_ == Stance::LieRight; }
     float Deficit(int i) const { return deficit_[i]; }
+    float SupportY() const { return supportY_; }   // surface under her (floor, or the bed she lies on)
 
     // Tuning (adult woman)
     float maxSpeed = 1.4f;         // m/s brisk walk
@@ -83,11 +84,15 @@ private:
     struct Targets {
         Vec3 pelvisOffset;
         Quat tilt;
-        float lean = 0.f, headPitch = 0.f;
-        Vec3 foot[2], kneePole[2], hand[2], elbowPole[2];
+        float lean = 0.f, headPitch = 0.f, headRoll = 0.f;
+        Vec3 headRollAxis{0, 0, 1};
+        float floorY = 0.f;
+        Vec3 foot[2], kneePole[2], hand[2], elbowPole[2], fingers[2];
         bool footFollow = false, palmDown[2] = {false, false}, elbowOverride[2] = {false, false};
     };
     Targets StanceTargets(Character& ch, World& world, Stance s, float dt);
+    Targets StanceTargetsFlipped(Character& ch, World& world, Stance s, float dt);   // as if turned around (rolling over)
+    float LieSurface(World& world, const Vec3& p) const;
     void GaitFeet(Character& ch, World& world, float dt, float stride, float lift, Vec3 out[2]);
     static Targets Blend(const Targets& a, const Targets& b, float w);
     float GroundAt(World& world, const Vec3& p, Vec3* normal = nullptr) const;
@@ -102,6 +107,9 @@ private:
     std::array<Vec3, 2> restHand_{};
     std::array<int, 2> slip_{};
     std::array<bool, 2> reaching_{};
+    std::array<bool, 2> gripWant_{};
+    std::array<Vec3, 2> reachTarget_{};
+    std::array<float, 2> curl_{0.25f, 0.25f}, spread_{}, thumb_{0.2f, 0.2f};
     float lean_ = 0.f, twist_ = 0.f;
     std::array<float, 2> deficit_{};   // how much further the hand needs to go than the arm reaches (m)
 
@@ -120,6 +128,9 @@ private:
     Stance next_ = Stance::Stand;        // where she is going this hop
     float trans_ = 1.f, transDur_ = 0.7f;
     float crawlPhase_ = 0.f;
+    float supportY_ = 0.f;
+    bool nextFlip_ = false;              // the stance being moved into faces the other way (rolled over)
+    float plantTilt_ = 0.f;              // extra torso pitch so planted hands actually reach the floor (crawl/sit)
 
     // climbing
     bool climbing_ = false, climbDown_ = false;

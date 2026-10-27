@@ -38,6 +38,19 @@ struct PostureParams {
     Vec3 elbowPole[2];
     bool palmDown[2] = {false, false};  // planted hand: palm flat on the surface below
     float headPitch = 0.f;              // extra head nod (radians, + = chin up) e.g. lifting the head when prone
+    float floorY = -1e9f;               // surface she is on: toes/thumbs are kept above it
+    float footPitch[2] = {0.f, 0.f};    // extra point (+) of the feet when they follow the shins (lying, kneeling)
+    float headRoll = 0.f;               // tilt the head sideways about headRollAxis (lying on a side)
+    Vec3 headRollAxis{0, 0, 1};
+
+    // Hands: palm orientation and fingers
+    bool orientHand[2] = {false, false};
+    Vec3 palmNormal[2] = {{0, -1, 0}, {0, -1, 0}};   // world direction out of the palm
+    Vec3 fingerDir[2] = {{0, 0, 1}, {0, 0, 1}};      // world direction the fingers point
+    float orientWeight[2] = {1.f, 1.f};
+    float fingerCurl[2] = {0.25f, 0.25f};           // 0 flat .. 1 fist (relaxed hands curl a little)
+    float fingerSpread[2] = {0.f, 0.f};
+    float thumbCurl[2] = {0.2f, 0.2f};
 };
 
 // Builds the full pose for this frame (resets to bind first). Call before soft tissue/limb collision.

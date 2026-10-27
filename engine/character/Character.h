@@ -14,7 +14,9 @@ struct RigMap {
     int clavicle[2] = {-1, -1}, upperarm[2] = {-1, -1}, lowerarm[2] = {-1, -1}, hand[2] = {-1, -1};
     int thigh[2] = {-1, -1}, calf[2] = {-1, -1}, foot[2] = {-1, -1}, ball[2] = {-1, -1};
     int breast[2] = {-1, -1}, glute[2] = {-1, -1};
+    int finger[2][5][3];   // [side][thumb,index,middle,ring,pinky][joint 1..3], -1 if missing
 
+    RigMap() { for (auto& s : finger) for (auto& f : s) for (int& j : f) j = -1; }
     void Build(const CharacterAsset& a);
     int SpineTop() const;
 };
@@ -69,6 +71,20 @@ public:
     // keepEndWorld: true keeps the end bone's world rotation (feet flat), false lets it follow the limb (relaxed hands).
     void SolveTwoBone(int a, int b, int c, const Vec3& target, const Vec3& pole, float weight = 1.f, bool keepEndWorld = true);
 
+    // ---- Hands ----
+    // Palm direction (out of the palm) and finger direction of a hand in world space.
+    Vec3 PalmNormal(int side) const;
+    Vec3 FingerDir(int side) const;
+    // Turns the hand so the palm faces `palm` with fingers toward `fingers` (weight 0..1, wrist limited to maxRad).
+    void OrientHand(int side, const Vec3& palm, const Vec3& fingers, float weight = 1.f, float maxRad = 1.9f);
+    // curl 0 flat .. 1 fist; spread 0..1 fingers apart; thumb 0 out .. 1 across the palm.
+    void PoseFingers(int side, float curl, float spread, float thumb);
+    bool HasFingers(int side) const { return hands_[side].valid; }
+
+    // Skin points of each foot (heel, sole, toes, instep) in their bone's frame, for floor contact.
+    float LowestFootPoint(int side) const;
+    void BuildContactSamples();
+
     // ---- Physical layers (run after the animated pose) ----
     void UpdateLimbCollision(float dt);                // hands/forearms/elbows stay on the skin
     void UpdateSoftTissue(float dt);                   // breast/glute spring-mass follow-through
@@ -97,6 +113,16 @@ public:
 private:
     void FitCapsules();
     void SetupSoftBones();
+    void SetupHands();
+    struct HandFrame {
+        bool valid = false;
+        Vec3 palmLocal, fingerLocal;           // in the hand bone's frame
+        Vec3 curlAxis[5][3];                   // per finger joint, in that joint's frame
+        Vec3 spreadAxis[5];                    // at the first joint, in its frame
+    };
+    HandFrame hands_[2];
+    struct Sample { int bone; Vec3 local; };
+    std::vector<Sample> footSamples_[2];
     void RecomputeSubtree(int bone);
     Vec3 CapsuleA(const BodyCapsule& c) const { return world_[c.bone].Apply(c.localA); }
     Vec3 CapsuleB(const BodyCapsule& c) const { return world_[c.bone].Apply(c.localB); }

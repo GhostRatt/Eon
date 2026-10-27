@@ -187,6 +187,7 @@ struct Body {
         ch.UpdateLimbCollision(dt);
         wardrobe.Apply(ch);
         ch.UpdateSoftTissue(dt);
+        hair.groundY = motor.SupportY();
         hair.Update(ch, dt);
 
         // face

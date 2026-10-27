@@ -107,6 +107,23 @@ void ApplyPosture(Character& ch, const PostureParams& p) {
         if (p.footOverride) foot = p.footTarget[i];
         const Vec3 pole = p.kneePoleOverride ? p.kneePole[i] : knee + fwd * 0.5f;
         ch.SolveTwoBone(r.thigh[i], r.calf[i], r.foot[i], foot, pole, 1.f, !p.footFollow);
+        if (p.footFollow) {
+            // feet relax/point; the floor pushes the toes up (lying face down the tops of the feet lie flat)
+            const Vec3 kneeAxis = (ch.BonePos(r.calf[i]) - ch.BonePos(r.foot[i])).Cross(pole - ch.BonePos(r.calf[i])).Normalized(left);
+            if (std::fabs(p.footPitch[i]) > 1e-3f) ch.RotateBoneWorld(r.foot[i], Quat::AxisAngle(kneeAxis, p.footPitch[i]));
+            // the floor pushes the foot: turn it (point or flex at the ankle) until no part of it is under the floor
+            const float want = p.floorY + 0.004f;
+            float lo = ch.LowestFootPoint(i);
+            for (int it = 0; it < 10 && lo < want; ++it) {
+                const float stepA = std::clamp((want - lo) * 4.f, 0.03f, 0.25f);
+                ch.RotateBoneWorld(r.foot[i], Quat::AxisAngle(kneeAxis, stepA));
+                const float a = ch.LowestFootPoint(i);
+                ch.RotateBoneWorld(r.foot[i], Quat::AxisAngle(kneeAxis, -2.f * stepA));
+                const float b = ch.LowestFootPoint(i);
+                if (a >= b) { ch.RotateBoneWorld(r.foot[i], Quat::AxisAngle(kneeAxis, 2.f * stepA)); lo = a; }
+                else lo = b;
+            }
+        }
         // flat on whatever is under the foot (slopes, steps): tilt the foot to the ground normal
         if (!p.footFollow) {
             const Vec3 n = p.footNormal[i].Normalized({0, 1, 0});
@@ -157,16 +174,17 @@ void ApplyPosture(Character& ch, const PostureParams& p) {
         // relaxed arms: hands follow the forearm; contact poses keep the palm orientation
         const bool relaxed = p.motion != TestMotion::HandsOnChest && p.motion != TestMotion::HandsOnHips && p.motion != TestMotion::ArmsCrossed;
         ch.SolveTwoBone(a, b, c, target, pole, 1.f, !relaxed && !p.handOverride[i]);
-        if (p.palmDown[i]) {
-            // palm flat on the floor: the hand's "down" (toward the palm) is found from the bind pose:
-            // bind hands hang with palms facing the thighs, so palm normal = toward the body midline
-            const Vec3 handDir = (ch.BonePos(c) - ch.BonePos(b)).Normalized({0, -1, 0});
-            Vec3 flatFwd = Vec3{handDir.x, 0, handDir.z}.Normalized(fwd);
-            const Quat cur = ch.World()[c].r;
-            const Vec3 palmNow = cur.Rotate(ch.World()[c].r.Conjugate().Rotate(left * -sideSign));
-            ch.RotateBoneWorld(c, Quat::FromTo(handDir, flatFwd));
-            (void)palmNow;
+        if (p.palmDown[i] || p.orientHand[i]) {
+            // planted: palm flat on the surface below, fingers ahead; otherwise whatever the motor asked for
+            Vec3 palm = p.palmDown[i] ? Vec3{0, -1, 0} : p.palmNormal[i];
+            Vec3 fingers = p.fingerDir[i];
+            if (p.palmDown[i] && !p.orientHand[i]) {
+                const Vec3 handDir = (ch.BonePos(c) - ch.BonePos(b)).Normalized({0, -1, 0});
+                fingers = Vec3{handDir.x, 0, handDir.z}.Normalized(fwd);
+            }
+            ch.OrientHand(i, palm, fingers, p.orientWeight[i]);
         }
+        ch.PoseFingers(i, p.fingerCurl[i], p.fingerSpread[i], p.thumbCurl[i]);
     }
 
     // Head turns toward what she looks at (neck takes 40%, head the rest, limited like a real neck)
@@ -191,6 +209,10 @@ void ApplyPosture(Character& ch, const PostureParams& p) {
     if (std::fabs(p.headPitch) > 1e-3f && r.head >= 0) {
         if (r.neck >= 0) ch.RotateBoneWorld(r.neck, Quat::AxisAngle(left, -p.headPitch * 0.5f));
         ch.RotateBoneWorld(r.head, Quat::AxisAngle(left, -p.headPitch * 0.5f));
+    }
+    if (std::fabs(p.headRoll) > 1e-3f && r.head >= 0) {
+        if (r.neck >= 0) ch.RotateBoneWorld(r.neck, Quat::AxisAngle(p.headRollAxis, p.headRoll * 0.5f));
+        ch.RotateBoneWorld(r.head, Quat::AxisAngle(p.headRollAxis, p.headRoll * 0.5f));
     }
 }
 

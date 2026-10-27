@@ -10,6 +10,7 @@ namespace {
 
 constexpr float kPi = 3.14159265358979f;
 constexpr float kPalm = 0.08f;
+constexpr float kWristUp = 0.05f;   // wrist joint above the surface when the palm is flat on it
 
 float WrapAngle(float a) {
     while (a > kPi) a -= 2.f * kPi;
@@ -35,6 +36,8 @@ const char* StanceName(Stance s) {
     case Stance::Crawl: return "crawl";
     case Stance::Prone: return "prone";
     case Stance::LieBack: return "lie on back";
+    case Stance::LieLeft: return "lie on left side";
+    case Stance::LieRight: return "lie on right side";
     default: return "?";
     }
 }
@@ -49,8 +52,10 @@ const std::vector<std::vector<Stance>>& StanceGraph() {
         /*Kneel */ {Stance::Crouch, Stance::Crawl, Stance::Sit},
         /*Sit   */ {Stance::Crouch, Stance::Kneel, Stance::LieBack},
         /*Crawl */ {Stance::Kneel, Stance::Prone},
-        /*Prone */ {Stance::Crawl},
-        /*Lie   */ {Stance::Sit},
+        /*Prone */ {Stance::Crawl, Stance::LieLeft, Stance::LieRight},
+        /*Back  */ {Stance::Sit, Stance::LieLeft, Stance::LieRight},
+        /*Left  */ {Stance::LieBack, Stance::Prone},
+        /*Right */ {Stance::LieBack, Stance::Prone},
     };
     return g;
 }
@@ -85,6 +90,8 @@ float HopDuration(Stance a, Stance b) {
     if (is(Stance::Kneel, Stance::Sit)) return 1.1f;
     if (is(Stance::Crouch, Stance::Sit)) return 1.0f;
     if (is(Stance::Sit, Stance::LieBack)) return 1.2f;
+    if (is(Stance::LieBack, Stance::LieLeft) || is(Stance::LieBack, Stance::LieRight)) return 1.0f;
+    if (is(Stance::Prone, Stance::LieLeft) || is(Stance::Prone, Stance::LieRight)) return 1.0f;
     return 0.8f;
 }
 
@@ -95,6 +102,16 @@ Quat Nlerp(const Quat& a, const Quat& b, float t) {
 }
 
 Vec3 Lerp(const Vec3& a, const Vec3& b, float t) { return a + (b - a) * t; }
+
+// Which way her head points when lying in (or getting down to) this stance: +1 ahead of her feet' facing, -1 behind.
+// Rolling over keeps the head where it is, so a roll from her back onto her front ends up facing the other way.
+int HeadSign(Stance s) {
+    switch (s) {
+    case Stance::Crawl: case Stance::Prone: return 1;
+    case Stance::Sit: case Stance::LieBack: case Stance::LieLeft: case Stance::LieRight: return -1;
+    default: return 0;
+    }
+}
 
 } // namespace
 
@@ -197,11 +214,18 @@ void Motor::UpdateStance(const MotorIntent& in, float dt) {
         if (next_ != stance_) {
             transDur_ = HopDuration(stance_, next_);
             trans_ = 0.f;
+            const int a = HeadSign(stance_), b = HeadSign(next_);
+            nextFlip_ = a != 0 && b != 0 && a != b;
         }
     }
     if (trans_ < 1.f) {
         trans_ = std::min(1.f, trans_ + dt / transDur_);
-        if (trans_ >= 1.f) stance_ = next_;
+        if (trans_ >= 1.f) {
+            stance_ = next_;
+            // rolled over: she now faces the other way (same pose, described from her new facing)
+            if (nextFlip_) yaw_ = WrapAngle(yaw_ + kPi);
+            nextFlip_ = false;
+        }
     }
     fb_.stance = stance_;
     fb_.inTransition = trans_ < 1.f;
@@ -333,7 +357,8 @@ void Motor::StepLocomotion(Character& ch, World& world, const MotorIntent& in, f
         if (in.hasFace) targetYaw = in.faceYaw;
         else if (Flat(vel_).Length() > 0.1f) targetYaw = std::atan2(vel_.x, vel_.z);
         const float rate = Lying() ? turnRate * 0.25f : stance_ == Stance::Crawl ? turnRate * 0.5f : turnRate;
-        const float canTurn = (stance_ == Stance::Sit || stance_ == Stance::Kneel || stance_ == Stance::LieBack) ? 0.f : 1.f;
+        const float canTurn = (stance_ == Stance::Sit || stance_ == Stance::Kneel || stance_ == Stance::LieBack ||
+                               stance_ == Stance::LieLeft || stance_ == Stance::LieRight) ? 0.f : 1.f;
         const float d = WrapAngle(targetYaw - yaw_);
         yaw_ = WrapAngle(yaw_ + std::clamp(d, -rate * dt, rate * dt) * canTurn);
     }
@@ -350,6 +375,8 @@ void Motor::UpdateHands(Character& ch, World& world, const MotorIntent& in, floa
         const HandIntent& h = in.hands[i];
         const Vec3 hp = world.BodyPosition(hand_[i]);
         reaching_[i] = h.reach;
+        gripWant_[i] = h.grip;
+        reachTarget_[i] = h.target;
 
         // where the hand should go, limited to what the arm can reach
         Vec3 target = h.reach && !climbing_ ? h.target : restHand_[i];
@@ -416,11 +443,15 @@ Motor::Targets Motor::Blend(const Targets& a, const Targets& b, float w) {
     o.tilt = Nlerp(a.tilt, b.tilt, w);
     o.lean = a.lean + (b.lean - a.lean) * w;
     o.headPitch = a.headPitch + (b.headPitch - a.headPitch) * w;
+    o.headRoll = a.headRoll + (b.headRoll - a.headRoll) * w;
+    o.floorY = std::max(a.floorY, b.floorY);
+    o.headRollAxis = std::fabs(a.headRoll) > std::fabs(b.headRoll) ? a.headRollAxis : b.headRollAxis;
     for (int i = 0; i < 2; ++i) {
         o.foot[i] = Lerp(a.foot[i], b.foot[i], w);
         o.kneePole[i] = Lerp(a.kneePole[i], b.kneePole[i], w);
         o.hand[i] = Lerp(a.hand[i], b.hand[i], w);
         o.elbowPole[i] = Lerp(a.elbowPole[i], b.elbowPole[i], w);
+        o.fingers[i] = Lerp(a.fingers[i], b.fingers[i], w).Normalized(b.fingers[i]);
         o.palmDown[i] = w < 0.5f ? a.palmDown[i] : b.palmDown[i];
         o.elbowOverride[i] = a.elbowOverride[i] || b.elbowOverride[i];
     }
@@ -488,6 +519,8 @@ Motor::Targets Motor::StanceTargets(Character& ch, World& world, Stance st, floa
     }
     const float speed = fb_.speed;
     const float sf = StanceSpeed(st) > 0.f ? speed / StanceSpeed(st) : 0.f;
+    for (int i = 0; i < 2; ++i) t.fingers[i] = (F + L * (side(i) * 0.25f)).Normalized();
+    t.floorY = g;
 
     switch (st) {
     case Stance::Stand:
@@ -540,15 +573,16 @@ Motor::Targets Motor::StanceTargets(Character& ch, World& world, Stance st, floa
         // sitting on the floor, legs out in front, leaning back on the hands
         const Vec3 hip = Vec3{P0.x, g + 0.11f, P0.z};
         t.pelvisOffset = hip - P0;
-        t.tilt = Quat::AxisAngle(L, -0.22f);
+        t.tilt = Quat::AxisAngle(L, -0.22f - plantTilt_);
         t.footFollow = true;
         for (int i = 0; i < 2; ++i) {
             t.foot[i] = hip + F * ((dims_.thigh + dims_.shin) * 0.86f) + L * (side(i) * 0.12f);
             t.foot[i].y = g + 0.06f;
             t.kneePole[i] = hip + F * 0.4f + U * 1.f + L * (side(i) * 0.1f);
             t.hand[i] = hip - F * 0.2f + L * (side(i) * 0.24f);
-            t.hand[i].y = g + 0.05f;
+            t.hand[i].y = g + kWristUp;
             t.palmDown[i] = true;
+            t.fingers[i] = (L * side(i) * 0.6f - F * 0.8f).Normalized();
             t.elbowPole[i] = hip - F * 0.6f + L * (side(i) * 0.4f) + U * 0.3f;
             t.elbowOverride[i] = true;
         }
@@ -559,7 +593,7 @@ Motor::Targets Motor::StanceTargets(Character& ch, World& world, Stance st, floa
         if (speed > 0.03f) crawlPhase_ += dt * (0.8f + 1.6f * sf);
         const Vec3 hip = Vec3{P0.x, g + 0.06f + dims_.thigh * 0.94f, P0.z};
         t.pelvisOffset = hip - P0;
-        t.tilt = Quat::AxisAngle(L, 1.42f);
+        t.tilt = Quat::AxisAngle(L, 1.42f + plantTilt_);
         t.footFollow = true;
         t.headPitch = 0.7f;
         const Vec3 shoulderC = hip + F * (dims_.torso * 0.95f);
@@ -573,7 +607,7 @@ Motor::Targets Motor::StanceTargets(Character& ch, World& world, Stance st, floa
             t.foot[i] = knee - F * (dims_.shin * 0.92f) + U * 0.03f;
             t.kneePole[i] = knee + F * 0.6f - U * 0.3f;
             t.hand[i] = shoulderC + L * (side(i) * 0.16f) + F * (0.04f + stride * std::sin(phHand));
-            t.hand[i].y = g + 0.06f + 0.05f * sf * std::max(0.f, std::cos(phHand));
+            t.hand[i].y = g + kWristUp + 0.05f * sf * std::max(0.f, std::cos(phHand));
             t.palmDown[i] = true;
             t.elbowPole[i] = shoulderC - F * 0.4f + L * (side(i) * 0.35f) + U * 0.2f;
             t.elbowOverride[i] = true;
@@ -585,7 +619,7 @@ Motor::Targets Motor::StanceTargets(Character& ch, World& world, Stance st, floa
         if (speed > 0.02f) crawlPhase_ += dt * (0.6f + 1.2f * sf);
         const Vec3 hip = Vec3{P0.x, g + 0.11f, P0.z};
         t.pelvisOffset = hip - P0;
-        const Quat tilt = Quat::AxisAngle(L, kPi * 0.5f - 0.04f);
+        const Quat tilt = Quat::AxisAngle(L, kPi * 0.5f - 0.17f);   // chest propped up a little on the forearms
         t.tilt = tilt;
         t.footFollow = true;
         t.headPitch = 0.9f;
@@ -600,19 +634,18 @@ Motor::Targets Motor::StanceTargets(Character& ch, World& world, Stance st, floa
             t.foot[i] = foot;
             t.kneePole[i] = hip - U * 1.f + L * (side(i) * 0.6f);
             t.hand[i] = shoulderC + F * (0.22f + 0.1f * sf * std::sin(ph)) + L * (side(i) * 0.14f);
-            t.hand[i].y = g + 0.05f;
+            t.hand[i].y = g + kWristUp;
             t.palmDown[i] = true;
-            t.elbowPole[i] = shoulderC - U * 0.6f + L * (side(i) * 0.4f) - F * 0.1f;
+            t.elbowPole[i] = shoulderC + U * 0.05f + L * (side(i) * 0.6f) - F * 0.1f;   // elbows out to the sides, on the floor
             t.elbowOverride[i] = true;
         }
         break;
     }
     case Stance::LieBack: {
         // on her back, arms by her sides; this is how she sleeps
-        RayHit bed;
-        float surf = g;
-        if (world.RayCast(Vec3{P0.x, P0.y + 0.3f, P0.z}, {0, -1, 0}, 1.6f, bed, true)) surf = std::max(g, bed.point.y);
-        const Vec3 hip = Vec3{P0.x, surf + 0.1f, P0.z};
+        const float surf = LieSurface(world, P0);
+        t.floorY = surf;
+        const Vec3 hip = Vec3{P0.x, surf + 0.115f, P0.z};
         t.pelvisOffset = hip - P0;
         const Quat tilt = Quat::AxisAngle(L, -(kPi * 0.5f - 0.04f));
         t.tilt = tilt;
@@ -623,14 +656,97 @@ Motor::Targets Motor::StanceTargets(Character& ch, World& world, Stance st, floa
             t.foot[i] = foot;
             t.kneePole[i] = hip + U * 1.f + F * 0.3f;
             t.hand[i] = hip - F * 0.08f + L * (side(i) * 0.26f);
-            t.hand[i].y = surf + 0.05f;
+            t.hand[i].y = surf + kWristUp;
+            t.palmDown[i] = true;
+            t.fingers[i] = (F + L * (side(i) * 0.15f)).Normalized();
             t.elbowPole[i] = hip - F * 0.3f + L * (side(i) * 0.6f);
             t.elbowOverride[i] = true;
         }
         break;
     }
+    case Stance::LieLeft:
+    case Stance::LieRight: {
+        // on her side: roll the lying-on-back body about its length, shoulders a little higher than the hips
+        // (they're wider), knees drawn up, lower arm forward by her face, upper arm resting in front of her chest
+        const float d = st == Stance::LieLeft ? 1.f : -1.f;
+        const int bot = st == Stance::LieLeft ? 0 : 1, top = 1 - bot;
+        const float surf = LieSurface(world, P0);
+        t.floorY = surf;
+        const Quat back = Quat::AxisAngle(L, -(kPi * 0.5f - 0.04f));
+        const Vec3 H0 = back.Rotate(U);
+        const Quat roll = Quat::AxisAngle(H0, kPi * 0.5f * d);
+        const float hipHalf = 0.5f * Distance(ch.BindPos(r.thigh[0]), ch.BindPos(r.thigh[1]));
+        const float shHalf = 0.5f * Distance(shRest[0], shRest[1]);
+        const float alpha = std::atan2(std::max(0.f, shHalf - hipHalf) + 0.03f, std::max(0.2f, dims_.torso));
+        const Quat lift = Quat::AxisAngle(H0.Cross(U).Normalized(F), alpha);
+        const Quat tilt = (lift * roll * back).Normalized();
+        t.tilt = tilt;
+        t.footFollow = true;
+        const Vec3 Hb = tilt.Rotate(U), Cb = tilt.Rotate(F);
+        const Vec3 hip = Vec3{P0.x, surf + hipHalf + 0.085f, P0.z};
+        t.pelvisOffset = hip - P0;
+        const float flex[2] = {bot == 0 ? 0.85f : 1.1f, bot == 1 ? 0.85f : 1.1f};   // upper leg drawn up a bit more
+        Vec3 bottomFoot, bottomKnee;
+        for (int k = 0; k < 2; ++k) {
+            const int i = k == 0 ? bot : top;
+            const Vec3 thJ = hip + tilt.Rotate(ch.BindPos(r.thigh[i]) - P0);
+            const float f = flex[i], kneeBend = 1.65f;
+            const Vec3 thighDir = (Hb * -std::cos(f) + Cb * std::sin(f)).Normalized();
+            const Vec3 shinDir = (Hb * -std::cos(f - kneeBend) + Cb * std::sin(f - kneeBend)).Normalized();
+            Vec3 knee = thJ + thighDir * dims_.thigh;
+            Vec3 foot = knee + shinDir * dims_.shin;
+            if (i == bot) {
+                knee.y = std::max(knee.y, surf + 0.06f);
+                foot.y = std::max(foot.y, surf + 0.045f);
+                bottomFoot = foot;
+                bottomKnee = knee;
+            } else {
+                // the upper leg rests on the lower one
+                knee.y = std::max(surf + 0.06f, bottomKnee.y + 0.1f);
+                foot.y = std::max(surf + 0.045f, bottomFoot.y + 0.08f);
+            }
+            t.foot[i] = foot;
+            t.kneePole[i] = knee + Cb * 1.f;
+        }
+        const Vec3 shB = hip + tilt.Rotate(shRest[bot] - P0), shT = hip + tilt.Rotate(shRest[top] - P0);
+        t.hand[bot] = shB + Cb * 0.26f + Hb * 0.14f;
+        t.hand[bot].y = surf + kWristUp;
+        t.elbowPole[bot] = shB + Cb * 0.3f - Hb * 0.4f - U * 0.3f;
+        t.fingers[bot] = Hb;
+        const Vec3 chestC = (shB + shT) * 0.5f - Hb * 0.12f;
+        t.hand[top] = chestC + Cb * 0.3f;
+        t.hand[top].y = surf + kWristUp;
+        t.elbowPole[top] = shT + U * 0.3f + Cb * 0.2f - Hb * 0.3f;
+        t.fingers[top] = (Cb + Hb * 0.3f).Normalized();
+        for (int i = 0; i < 2; ++i) { t.palmDown[i] = true; t.elbowOverride[i] = true; }
+        // head tips down toward the lower arm
+        t.headRoll = 0.15f * -d;
+        t.headRollAxis = Cb;
+        break;
+    }
     default: break;
     }
+    return t;
+}
+
+float Motor::LieSurface(World& world, const Vec3& p) const {
+    // lie on whatever is under her hips (floor, a bed)
+    RayHit bed;
+    float surf = pos_.y;
+    if (world.RayCast(Vec3{p.x, p.y + 0.3f, p.z}, {0, -1, 0}, 1.6f, bed, true)) surf = std::max(pos_.y, bed.point.y);
+    return surf;
+}
+
+Motor::Targets Motor::StanceTargetsFlipped(Character& ch, World& world, Stance st, float dt) {
+    // evaluate the stance as if she faced the other way, then express it for her current facing
+    const Transform keep = ch.placement;
+    const Vec3 P0real = ch.BindPos(ch.Rig().pelvis);
+    ch.placement.r = Quat::AxisAngle({0, 1, 0}, yaw_ + kPi);
+    const Vec3 P0flip = ch.BindPos(ch.Rig().pelvis);
+    Targets t = StanceTargets(ch, world, st, dt);
+    ch.placement = keep;
+    t.pelvisOffset = t.pelvisOffset + (P0flip - P0real);
+    t.tilt = (t.tilt * Quat::AxisAngle({0, 1, 0}, kPi)).Normalized();
     return t;
 }
 
@@ -655,6 +771,8 @@ void Motor::PostPhysics(Character& ch, World& world, PostureParams base, float d
             const float s = i == 0 ? 1.f : -1.f;
             const Vec3 grab = Vec3{climbEdge_.x, edgeY + 0.05f, climbEdge_.z} + L * (s * 0.22f) + climbDir_ * (climbDown_ ? -0.05f : 0.08f);
             tg.hand[i] = Lerp(tg.hand[i], grab, handsOn);
+            tg.palmDown[i] = handsOn > 0.5f;
+            tg.fingers[i] = climbDir_ * (climbDown_ ? -1.f : 1.f);
             tg.elbowPole[i] = ch.BindPos(r.upperarm[i]) + L * (s * 0.5f) - U * 0.2f;
             tg.elbowOverride[i] = true;
             tg.kneePole[i] = ch.BindPos(r.calf[i]) + F * 1.f + L * (s * 0.2f);
@@ -669,7 +787,7 @@ void Motor::PostPhysics(Character& ch, World& world, PostureParams base, float d
     } else {
         Targets cur = StanceTargets(ch, world, stance_, dt);
         if (trans_ < 1.f) {
-            Targets nxt = StanceTargets(ch, world, next_, dt);
+            Targets nxt = nextFlip_ ? StanceTargetsFlipped(ch, world, next_, dt) : StanceTargets(ch, world, next_, dt);
             tg = Blend(cur, nxt, Smooth(trans_));
         } else {
             tg = cur;
@@ -682,11 +800,17 @@ void Motor::PostPhysics(Character& ch, World& world, PostureParams base, float d
     base.footFollow = tg.footFollow;
     base.kneePoleOverride = true;
     base.headPitch = tg.headPitch;
+    base.headRoll = tg.headRoll;
+    base.floorY = tg.floorY;
+    supportY_ = tg.floorY;
+    base.headRollAxis = tg.headRollAxis;
     for (int i = 0; i < 2; ++i) {
         base.footTarget[i] = tg.foot[i];
         base.kneePole[i] = tg.kneePole[i];
         base.footNormal[i] = footNormal_[i];
-        base.palmDown[i] = tg.palmDown[i] && !reaching_[i];
+        base.palmDown[i] = tg.palmDown[i] && !reaching_[i] && joint_[i] < 0;
+        base.fingerDir[i] = tg.fingers[i];
+        base.orientHand[i] = base.palmDown[i];
         base.elbowPoleOverride[i] = tg.elbowOverride[i] && !reaching_[i];
         base.elbowPole[i] = tg.elbowPole[i];
         // arms follow her physical hands when she uses them; otherwise the stance places them
@@ -716,7 +840,41 @@ void Motor::PostPhysics(Character& ch, World& world, PostureParams base, float d
     base.lean = std::max(lean_, tg.lean);
     base.leanTwist = twist_;
 
+    // hands: open toward what she reaches for, flat when planted, closed around what she holds, loose otherwise
+    for (int i = 0; i < 2; ++i) {
+        float curl = 0.3f, spread = 0.1f, thumb = 0.25f;
+        if (joint_[i] >= 0) { curl = 0.8f; spread = 0.f; thumb = 0.75f; }
+        else if (reaching_[i] && gripWant_[i]) { curl = 1.f; spread = 0.f; thumb = 0.9f; }   // closing on nothing: a fist
+        else if (reaching_[i]) {
+            curl = 0.06f; spread = 0.35f; thumb = 0.1f;
+            const Vec3 sh = ch.BonePos(r.upperarm[i]);
+            const Vec3 dir = (reachTarget_[i] - sh).Normalized(F);
+            const float below = std::clamp((sh.y - reachTarget_[i].y) / 0.6f, 0.f, 1.f);
+            // low things: palm down over them; things at chest height and up (a wall button): palm toward it, fingers up
+            base.orientHand[i] = true;
+            base.palmNormal[i] = Lerp(dir, Vec3{0, -1, 0}, below).Normalized(dir);
+            base.fingerDir[i] = Lerp(U, Flat(dir).Normalized(F), below);
+            base.orientWeight[i] = 0.8f;
+        } else if (base.palmDown[i]) { curl = 0.2f; spread = 0.55f; thumb = -0.3f; }   // fingers slope down from the knuckles onto the surface
+        const float k = std::clamp(dt * 8.f, 0.f, 1.f);
+        curl_[i] += (curl - curl_[i]) * k;
+        spread_[i] += (spread - spread_[i]) * k;
+        thumb_[i] += (thumb - thumb_[i]) * k;
+        base.fingerCurl[i] = curl_[i];
+        base.fingerSpread[i] = spread_[i];
+        base.thumbCurl[i] = thumb_[i];
+    }
+
     ApplyPosture(ch, base);
+
+    // planted hands that don't reach the floor: pitch the torso further (crawl: shoulders down; sit: lean back more)
+    if (!climbing_ && trans_ >= 1.f && (stance_ == Stance::Crawl || stance_ == Stance::Sit) && r.hand[0] >= 0 && r.hand[1] >= 0) {
+        const float handY = 0.5f * (ch.BonePos(r.hand[0]).y + ch.BonePos(r.hand[1]).y);
+        const float err = handY - (pos_.y + kWristUp);
+        if (!reaching_[0] && !reaching_[1]) plantTilt_ = std::clamp(plantTilt_ + err * dt * 8.f, -0.4f, 0.7f);
+    } else if (trans_ >= 1.f) {
+        plantTilt_ += (0.f - plantTilt_) * std::clamp(dt * 3.f, 0.f, 1.f);
+    }
 
     // her torso body follows the posed chest (lying down it lies flat too)
     {

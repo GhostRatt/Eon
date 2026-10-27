@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -35,16 +36,27 @@ NOTES = os.path.join(os.path.dirname(__file__), "notes.json")   # committed: sur
 SKIP_DIRS = {".git", ".eongraph", "_deps", "node_modules", "__pycache__"}
 CPP_EXT = {".h", ".hpp", ".hh", ".c", ".cc", ".cpp", ".cxx", ".inl"}
 
-try:
-    import tree_sitter as ts
-    import tree_sitter_cpp
+ts = tree_sitter_cpp = tree_sitter_python = None
+HAVE_TS = None   # decided on first index (queries never pay for importing the parser)
+
+
+def load_parsers():
+    global ts, tree_sitter_cpp, tree_sitter_python, HAVE_TS
+    if HAVE_TS is not None:
+        return HAVE_TS
     try:
-        import tree_sitter_python
-    except ImportError:
-        tree_sitter_python = None
-    HAVE_TS = True
-except ImportError:   # still works (cruder) without tree-sitter
-    HAVE_TS = False
+        import tree_sitter as _ts
+        import tree_sitter_cpp as _cpp
+        ts, tree_sitter_cpp = _ts, _cpp
+        try:
+            import tree_sitter_python as _py
+            tree_sitter_python = _py
+        except ImportError:
+            tree_sitter_python = None
+        HAVE_TS = True
+    except ImportError:   # still works (cruder) without tree-sitter
+        HAVE_TS = False
+    return HAVE_TS
 
 
 def tok(s: str) -> int:
@@ -110,6 +122,25 @@ def trailing_comment(line):
     return m.group(1).strip()[:160] if m else ""
 
 
+SMART = ("unique_ptr", "shared_ptr", "weak_ptr", "optional", "reference_wrapper")
+
+
+def norm_type(ty):
+    """'const std::unique_ptr<Physics>&' -> 'Physics'; containers/auto/builtins -> None"""
+    if not ty:
+        return None
+    ty = re.sub(r"\b(const|volatile|struct|class|typename|mutable|static|inline|constexpr)\b", "", ty).replace("&", "").replace("*", "").strip()
+    m = re.match(r"(?:\w+::)*(\w+)\s*<\s*(.+)>\s*$", ty)
+    if m:
+        if m.group(1) in SMART:
+            return norm_type(m.group(2))
+        return None
+    ty = ty.split("::")[-1].strip()
+    if not re.match(r"^[A-Z]\w*$", ty):   # project types are CapitalCase; skip int/float/auto/std types
+        return None
+    return ty
+
+
 class CppExtractor:
     def __init__(self):
         self.lang = ts.Language(tree_sitter_cpp.language())
@@ -137,7 +168,56 @@ class CppExtractor:
             syms.append(s)
             return s
 
-        def calls_in(body, owner):
+        def locals_of(func, body):
+            env = {}
+            def bind(type_node, decl):
+                ty = norm_type(t(type_node)) if type_node is not None else None
+                d = decl
+                while d is not None and d.type in ("pointer_declarator", "reference_declarator", "init_declarator", "array_declarator", "optional_parameter_declaration"):
+                    d = d.child_by_field_name("declarator") or (d.named_children[-1] if d.named_children else None)
+                if ty and d is not None and d.type == "identifier":
+                    env[t(d)] = ty
+            fd = func.child_by_field_name("declarator")
+            while fd is not None and fd.type != "function_declarator":
+                fd = fd.child_by_field_name("declarator")
+            if fd is not None and fd.child_by_field_name("parameters") is not None:
+                for prm in fd.child_by_field_name("parameters").named_children:
+                    if prm.type in ("parameter_declaration", "optional_parameter_declaration"):
+                        bind(prm.child_by_field_name("type"), prm.child_by_field_name("declarator"))
+            st = [body]
+            while st:
+                n = st.pop()
+                if n.type == "declaration":
+                    for dcl in n.children_by_field_name("declarator"):
+                        bind(n.child_by_field_name("type"), dcl)
+                elif n.type == "for_range_loop":
+                    bind(n.child_by_field_name("type"), n.child_by_field_name("declarator"))
+                st.extend(n.children)
+            return env
+
+        def hint_of(expr, env):
+            """Type path of the object a method is called on: '=World' (known), '@world_' (member of the owner class),
+            '@body|motor' (member chain), or None."""
+            if expr is None:
+                return None
+            if expr.type == "identifier":
+                nm = t(expr)
+                return "=" + env[nm] if nm in env else "@" + nm
+            if expr.type == "this":
+                return "@this"
+            if expr.type == "field_expression":
+                base = hint_of(expr.child_by_field_name("argument"), env)
+                fld = expr.child_by_field_name("field")
+                if base and fld is not None:
+                    return (base[1:] if base == "@this" else base) + "|" + t(fld) if base != "@this" else "@" + t(fld)
+            if expr.type in ("parenthesized_expression", "pointer_expression"):
+                return hint_of(expr.named_children[-1] if expr.named_children else None, env)
+            if expr.type == "subscript_expression":
+                return hint_of(expr.child_by_field_name("argument"), env)
+            return None
+
+        def calls_in(body, owner, env=None):
+            env = env or {}
             seen = set()
             stack = [body]
             while stack:
@@ -145,17 +225,19 @@ class CppExtractor:
                 if n.type == "call_expression":
                     f = n.child_by_field_name("function")
                     name = None
+                    hint = None
                     if f is not None:
                         if f.type == "field_expression":
                             fld = f.child_by_field_name("field")
                             name = t(fld) if fld is not None else None
+                            hint = hint_of(f.child_by_field_name("argument"), env)
                         elif f.type in ("qualified_identifier", "template_function"):
                             name = t(f).split("::")[-1].split("<")[0]
                         elif f.type == "identifier":
                             name = t(f)
-                    if name and name not in seen:
-                        seen.add(name)
-                        edges.append([owner, name, "calls?"])
+                    if name and (name, hint) not in seen:
+                        seen.add((name, hint))
+                        edges.append([owner, name, "calls?", hint])
                 elif n.type in ("type_identifier",):
                     nm = t(n)
                     if ("T:" + nm) not in seen:
@@ -196,6 +278,7 @@ class CppExtractor:
                         if b not in ("public", "private", "protected", "virtual"):
                             edges.append([s["id"], b, "inherits?"])
                     members = []
+                    mtypes = {}
                     for m in body.children:
                         if m.type in ("field_declaration", "declaration"):
                             dd = m.child_by_field_name("declarator")
@@ -207,6 +290,18 @@ class CppExtractor:
                             elif any(k.type in ("class_specifier", "struct_specifier", "enum_specifier") for k in m.children):
                                 walk(m.parent if False else _Wrap([m]), ns, qual)
                             else:
+                                mt = norm_type(t(m.child_by_field_name("type"))) if m.child_by_field_name("type") is not None else None
+                                for k in m.children:
+                                    nm_ = None
+                                    if k.type in ("field_identifier", "identifier"):
+                                        nm_ = t(k)
+                                    elif k.type in ("init_declarator", "array_declarator", "pointer_declarator", "reference_declarator"):
+                                        x = k.child_by_field_name("declarator") or (k.named_children[-1] if k.named_children else None)
+                                        while x is not None and x.type in ("pointer_declarator", "reference_declarator", "array_declarator", "init_declarator"):
+                                            x = x.child_by_field_name("declarator") or (x.named_children[-1] if x.named_children else None)
+                                        nm_ = t(x) if x is not None else None
+                                    if nm_ and mt:
+                                        mtypes[nm_] = mt
                                 for k in m.children:
                                     if k.type in ("field_identifier", "identifier"):
                                         members.append(t(k))
@@ -226,6 +321,8 @@ class CppExtractor:
                             walk(_Wrap(m.children), ns, qual)
                     if members:
                         s["members"] = members[:40]
+                    if mtypes:
+                        s["mtypes"] = mtypes
                 elif ty == "enum_specifier":
                     do_enum(c, cls)
                 elif ty == "function_definition":
@@ -263,7 +360,7 @@ class CppExtractor:
             s = add("function" if "::" not in qual else "method", qual.split("::")[-1], qual, c, parent="::".join(qual.split("::")[:-1]) or None,
                     sig=" ".join(header.split()))
             if body is not None:
-                calls_in(body, s["id"])
+                calls_in(body, s["id"], locals_of(c, body))
 
         walk(tree.root_node, [], "")
         return syms, edges
@@ -404,8 +501,8 @@ def file_summary(path, text):
 def index(force=False, quiet=False):
     os.makedirs(OUT, exist_ok=True)
     old = load_graph() or {}
-    old_files = {} if force else old.get("files", {})
-    cpp = CppExtractor() if HAVE_TS else None
+    old_files = {} if force or old.get("version") != 3 else old.get("files", {})
+    cpp = CppExtractor() if load_parsers() else None
     files, all_syms, raw_edges = {}, [], []
     reparsed = 0
     for f in source_files():
@@ -442,9 +539,27 @@ def index(force=False, quiet=False):
                         bc.append(m.group(1).strip())
                 if bc:
                     sy["bc"] = " ".join(bc)[:400]
+                if sy["kind"] in ("function", "method"):
+                    ids = []
+                    seen_w = set()
+                    for ident in re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", "\n".join(tl[sy["line"]:sy["end"]])):
+                        if ident not in seen_w:
+                            seen_w.add(ident)
+                            ids.append(ident)
+                    sy["bw"] = " ".join(ids)[:700]   # what the body works with (identifiers)
         files[f] = {"hash": h, "lines": text.count("\n") + 1, "summary": file_summary(f, text), "syms": syms, "edges": edges}
         all_syms += syms
         raw_edges += edges
+    # header comments describe the definitions in the .cpp: pass them on
+    decl_doc = {}
+    for sy in all_syms:
+        if (sy.get("decl") or sy["kind"] == "decl") and sy.get("doc"):
+            decl_doc.setdefault(sy["qual"], sy["doc"])
+    for sy in all_syms:
+        if not sy.get("decl") and sy["kind"] != "decl" and sy["qual"] in decl_doc:
+            d = decl_doc[sy["qual"]]
+            if d not in sy.get("doc", ""):
+                sy["doc"] = (d + (" | " + sy["doc"] if sy.get("doc") else ""))[:300]
     # resolve names -> symbols (prefer same class, then same file, then unique; else keep all as ambiguous)
     by_name = defaultdict(list)
     for s in all_syms:
@@ -452,7 +567,32 @@ def index(force=False, quiet=False):
             by_name[s["name"]].append(s)
     by_id = {s["id"]: s for s in all_syms}
     edges = []
-    for a, name, kind in raw_edges:
+    # member types per class (for resolving obj.method() by the object's type)
+    mtypes = {}
+    for sy in all_syms:
+        if sy.get("mtypes"):
+            mtypes[sy["qual"]] = sy["mtypes"]
+            mtypes.setdefault(sy["name"], sy["mtypes"])
+
+    def type_of_hint(hint, owner_cls):
+        if not hint:
+            return None
+        parts = hint.split("|")
+        head = parts[0]
+        if head.startswith("="):
+            ty = head[1:]
+        else:
+            ty = mtypes.get(owner_cls or "", {}).get(head[1:]) if head.startswith("@") else None
+        for p in parts[1:]:
+            if ty is None:
+                return None
+            ty = mtypes.get(ty, {}).get(p)
+        return ty
+
+    typed = 0
+    for e in raw_edges:
+        a, name, kind = e[0], e[1], e[2]
+        hint = e[3] if len(e) > 3 else None
         k = kind.rstrip("?")
         if k == "includes":
             tgt = next((f for f in files if f.endswith("/" + name) or f == name), None)
@@ -471,6 +611,13 @@ def index(force=False, quiet=False):
         if not cands:
             continue
         src = by_id.get(a)
+        if hint and len(cands) > 1 and src is not None:
+            ty = type_of_hint(hint, src.get("parent"))
+            if ty:
+                by_type = [c for c in cands if c.get("parent") == ty or c["qual"].startswith(ty + "::")]
+                if by_type:
+                    cands = by_type
+                    typed += 1
         if src and len(cands) > 1:
             same_cls = [c for c in cands if src.get("parent") and c.get("parent") == src.get("parent")]
             same_file = [c for c in cands if c["file"] == src["file"]]
@@ -488,7 +635,7 @@ def index(force=False, quiet=False):
         if key not in seen:
             seen.add(key)
             uniq.append(e)
-    g = {"version": 2, "files": files, "edges": uniq, "parser": "tree-sitter" if HAVE_TS else "regex"}
+    g = {"version": 3, "files": files, "edges": uniq, "parser": "tree-sitter" if HAVE_TS else "regex"}
     with open(GRAPH, "w", encoding="utf-8") as fh:
         json.dump(g, fh)
     if not quiet:
@@ -631,12 +778,15 @@ def cmd_find(G_, q):
 
 
 def cmd_show(G_, q, ctx=0):
-    res = G_.resolve(q)
+    res = []
+    for one in q if isinstance(q, list) else [q]:
+        r = G_.resolve(one)
+        res += r[:3] if len(r) <= 3 else r[:1]
     if not res:
         print("not found")
         return
     out = []
-    for s in res[:3]:
+    for s in res[:6]:
         with open(os.path.join(ROOT, s["file"]), encoding="utf-8", errors="replace") as f:
             lines = f.read().split("\n")
         a = max(0, s["line"] - 1 - ctx)
@@ -734,14 +884,60 @@ def cmd_path(G_, a, b):
 WORD = re.compile(r"[A-Za-z][a-z]+|[A-Z]+(?![a-z])|\d+")
 
 
+STOP = {"the", "and", "for", "with", "from", "that", "this", "into", "her", "she", "its", "are", "was", "not", "but", "can",
+        "get", "set", "use", "out", "all", "one", "two"}
+
+
+def stem(w):
+    """Tiny suffix stripper: flatten/flattens/flattened -> flatten, visibility/visible -> visib, clips -> clip."""
+    for suf in ("ization", "ations", "ation", "ibility", "ility", "ities", "ingly", "ness", "ments", "ment", "ings", "ing", "ions", "ion",
+                "ible", "able", "ity", "ies", "ers", "ed", "er", "es", "ly", "s"):
+        if len(w) > len(suf) + 2 and w.endswith(suf):
+            w = w[: -len(suf)]
+            break
+    if len(w) > 3 and w[-1] == w[-2]:
+        w = w[:-1]
+    return w
+
+
+# how programmers abbreviate (query side): "field of view" finds `fov`, "position" finds `pos`
+ABBREV = {"field of view": "fov", "position": "pos", "direction": "dir", "velocity": "vel", "rotation": "rot", "number": "num",
+          "count": "num", "index": "idx", "temperature": "temp", "configuration": "cfg", "config": "cfg", "camera": "cam",
+          "inverse kinematics": "ik", "delta time": "dt", "argument": "arg", "arguments": "argv", "minimum": "min", "maximum": "max",
+          "previous": "prev", "current": "cur", "reference": "ref", "message": "msg", "error": "err", "colour": "color"}
+
+
+def expand_query(q):
+    ql = q.lower()
+    extra = [v for k, v in ABBREV.items() if k in ql]
+    return q + " " + " ".join(extra)
+
+
 def words(s):
-    return [w.lower() for w in WORD.findall(s)]
+    return [stem(w.lower()) for w in WORD.findall(s) if w.lower() not in STOP]
 
 
-def cmd_context(G_, query, budget=1500):
+def cmd_eval(G_):
+    """Benchmark the task search: rank of the expected symbol for each task in eval.json."""
+    cases = json.load(open(os.path.join(os.path.dirname(__file__), "eval.json")))
+    rr, at1, at5, at10 = 0.0, 0, 0, 0
+    for q, want in cases:
+        want = want if isinstance(want, list) else [want]
+        ranked = [G_.by_id[i]["qual"] for i, _ in rank_context(G_, q)]
+        r = next((k + 1 for k, x in enumerate(ranked) if x in want), None)
+        rr += 1.0 / r if r else 0.0
+        at1 += r == 1; at5 += bool(r and r <= 5); at10 += bool(r and r <= 10)
+        print(f"{(str(r) if r else '-'):>3}  {q}  -> {want}" + ("" if r == 1 else f"   (top: {ranked[0] if ranked else '-'})"))
+    n = len(cases)
+    print(f"MRR {rr / n:.3f}  @1 {at1}/{n}  @5 {at5}/{n}  @10 {at10}/{n}")
+
+
+def rank_context(G_, query, limit=30):
     """Rank symbols for a task (name/sig/doc/note word overlap, idf-weighted), add their 1-hop neighbors,
     print outline lines with locations, best first, within budget."""
-    q = set(words(query)) | {w.lower() for w in re.findall(r"\w+", query)}
+    q = set(words(expand_query(query)))
+    wants_tests = "test" in query.lower()
+    wants_content = any(k in query.lower() for k in ("zone", "entity", "content", "json", "config"))
     docs = {}
     df = defaultdict(int)
     for s in G_.syms:
@@ -752,6 +948,8 @@ def cmd_context(G_, query, budget=1500):
             ws[w] = max(ws.get(w, 0), 0.5)          # parameter names say little
         for w in words(s["file"]):
             ws[w] = max(ws.get(w, 0), 0.6)
+        for w in words(s.get("bw", "")):
+            ws[w] = max(ws.get(w, 0), 0.6)          # identifiers the body uses
         for w in words(s.get("bc", "")):
             ws[w] = max(ws.get(w, 0), 1.0)          # intent comments in the body
         for w in words(s.get("doc", "")) + words(" ".join(G_.note_for(s))):
@@ -761,7 +959,6 @@ def cmd_context(G_, query, budget=1500):
         docs[s["id"]] = ws
         for w in ws:
             df[w] += 1
-    import math
     n = max(1, len(docs))
     score = {}
     for sid, ws in docs.items():
@@ -772,7 +969,15 @@ def cmd_context(G_, query, budget=1500):
                 sc += math.log(1 + n / (1 + df[w])) * ws[w]
                 hits += 1
         if sc > 0:
-            score[sid] = sc * (1 + 0.35 * (hits - 1))   # matching several task words beats one strong word
+            sy = G_.by_id[sid]
+            sc *= 1 + 0.35 * (hits - 1)                  # matching several task words beats one strong word
+            if not wants_tests and ("test" in sy["file"] or sy["name"].startswith("Test")):
+                sc *= 0.55                               # tests show how, but the code is usually what's wanted
+            if not wants_content and sy["kind"] in ("entity", "config", "target"):
+                sc *= 0.5
+            if sy["kind"] in ("function", "method") and sy["end"] > sy["line"]:
+                sc *= 1 + 0.08 * math.log(1 + sy["end"] - sy["line"])   # real implementations over one-liners
+            score[sid] = sc
     # spread a little along calls so the helpers of a relevant function show up too
     spread = dict(score)
     for sid, sc in score.items():
@@ -783,22 +988,142 @@ def cmd_context(G_, query, budget=1500):
                 spread[other] = max(spread.get(other, 0), sc * 0.3 * e[4] / math.log(2.7 + hub))
     ranked = sorted(spread.items(), key=lambda x: -x[1])
     top = ranked[0][1] if ranked else 0
-    ranked = [r for r in ranked if r[1] >= top * 0.12][:30]   # only the clearly relevant
-    out = [f"Task: {query}", "Most relevant (file:lines kind signature // doc). Use `show <qual>` to read one:"]
-    files = defaultdict(int)
-    for sid, sc in ranked:
-        s = G_.by_id[sid]
-        if (s.get("decl") or s["kind"] == "decl") and s["qual"] in G_.defined:
-            continue
-        line = f"- {G_.loc(s)} {s['kind']} {s['sig'][:120]}" + (f" // {s['doc'][:80]}" if s.get("doc") else "")
-        for nt in G_.note_for(s):
-            line += f"\n    NOTE: {nt}"
-        if tok("\n".join(out) + line) > budget:
+    ranked = [r for r in ranked if r[1] >= top * 0.12]   # only the clearly relevant
+    ranked = [r for r in ranked if not ((G_.by_id[r[0]].get("decl") or G_.by_id[r[0]]["kind"] == "decl") and G_.by_id[r[0]]["qual"] in G_.defined)]
+    return ranked[:limit]
+
+
+def compact_sig(s):
+    """'static void Motor::StartClimb(Character& ch, ...)' -> 'StartClimb(Character& ch, ...)'; types stay, noise goes."""
+    sig = s.get("sig", "")
+    if s["kind"] in ("function", "method", "decl"):
+        k = sig.find(s["name"] + "(")
+        if k >= 0:
+            sig = sig[k:]
+    sig = re.sub(r"\bstd::", "", sig)
+    sig = re.sub(r"\b(struct|class) (\w+)$", r"\1 \2", sig)
+    sig = re.sub(r"\s+", " ", sig).strip()
+    return sig if len(sig) <= 110 else sig[:107] + "..."
+
+
+def cmd_context(G_, query, budget=900):
+    ranked = rank_context(G_, query, limit=40)
+    if not ranked:
+        emit(f"Task: {query}\nnothing matched; try `map` or other words")
+        return
+    top = ranked[0][1]
+    strong = [r for r in ranked if r[1] >= top * 0.25][:14]
+    weak = [r for r in ranked if r not in strong][:10]
+    # group the strong ones by file, files in order of their best match
+    order, groups = [], defaultdict(list)
+    for sid, sc in strong:
+        f = G_.by_id[sid]["file"]
+        if f not in groups:
+            order.append(f)
+        groups[f].append(G_.by_id[sid])
+    out = [f"Task: {query}  (`show <name>` reads one)"]
+    for f in order:
+        block = [f]
+        for sy in groups[f]:
+            ln = f"  {sy['line']}-{sy['end']} {compact_sig(sy)}" if sy["end"] > sy["line"] else f"  {sy['line']} {compact_sig(sy)}"
+            if sy.get("parent") and not compact_sig(sy).startswith(sy["parent"]) and sy["kind"] == "method":
+                ln = ln.replace(f" {sy['name']}(", f" {sy['parent'].split('::')[-1]}::{sy['name']}(", 1)
+            if sy.get("doc"):
+                ln += f"  // {sy['doc'][:70]}"
+            block.append(ln)
+            for nt in G_.note_for(sy):
+                block.append(f"    NOTE: {nt}")
+        if tok("\n".join(out + block)) > budget:
             break
-        out.append(line)
-        files[s["file"]] += 1
-    out.append("Files involved: " + ", ".join(f"{f}({c})" for f, c in sorted(files.items(), key=lambda x: -x[1])))
+        out += block
+    if weak:
+        out.append("also: " + ", ".join(f"{G_.by_id[sid]['qual']} {G_.by_id[sid]['file'].split('/')[-1]}:{G_.by_id[sid]['line']}" for sid, _ in weak))
     emit("\n".join(out))
+
+
+def cmd_brief(G_, q):
+    """Everything about one symbol in one view: where, signature, doc, notes, members, callers, callees."""
+    res = G_.resolve(q)
+    if not res:
+        print("not found")
+        return
+    out = []
+    for sy in res[:2]:
+        out.append(f"{sy['qual']}  {G_.loc(sy)}  [{sy['kind']}]")
+        out.append(f"  {compact_sig(sy)}")
+        if sy.get("doc"):
+            out.append(f"  // {sy['doc'][:200]}")
+        for nt in G_.note_for(sy):
+            out.append(f"  NOTE: {nt}")
+        if sy.get("members"):
+            out.append("  members: " + ", ".join(sy["members"][:30]))
+        meths = [x for x in G_.syms if x.get("parent") == sy["qual"] and x["kind"] == "method" and not x.get("decl")]
+        if meths:
+            out.append("  methods: " + ", ".join(f"{m['name']}:{m['line']}" for m in sorted(meths, key=lambda m: m['line'])[:30]))
+        ins = sorted({o["qual"] for o, e in _neighbors(G_, sy["id"], "in")})
+        outs = sorted({o["qual"] for o, e in _neighbors(G_, sy["id"], "out")})
+        if ins:
+            out.append(f"  called by ({len(ins)}): " + ", ".join(ins[:15]) + (" …" if len(ins) > 15 else ""))
+        if outs:
+            out.append(f"  calls ({len(outs)}): " + ", ".join(outs[:20]) + (" …" if len(outs) > 20 else ""))
+    emit("\n".join(out))
+
+
+def cmd_refs(G_, ident):
+    """Functions whose bodies use an identifier (a member, constant, local name): grep, but scoped to symbols."""
+    rx = re.compile(r"\b" + re.escape(ident) + r"\b")
+    hits = [sy for sy in G_.syms if sy.get("bw") and rx.search(sy["bw"])]
+    if len(hits) < 40:   # bw is truncated for long functions: confirm on disk
+        extra = []
+        cache = {}
+        for sy in G_.syms:
+            if sy in hits or sy["kind"] not in ("function", "method") or sy["end"] <= sy["line"] or sy.get("decl"):
+                continue
+            if sy["file"] not in cache:
+                with open(os.path.join(ROOT, sy["file"]), encoding="utf-8", errors="replace") as f:
+                    cache[sy["file"]] = f.read().split("\n")
+            if any(rx.search(l) for l in cache[sy["file"]][sy["line"] - 1:sy["end"]]):
+                extra.append(sy)
+        hits += extra
+    by_file = defaultdict(list)
+    for sy in hits:
+        by_file[sy["file"]].append(sy)
+    out = [f"`{ident}` used in {len(hits)} symbols:"]
+    for f in sorted(by_file):
+        out.append(f"  {f}: " + ", ".join(f"{x['qual']}:{x['line']}" for x in sorted(by_file[f], key=lambda x: x['line'])))
+    emit("\n".join(out))
+
+
+def cmd_diff(G_, rev="HEAD"):
+    """Symbols touched by changes since `rev` (default: uncommitted), with how many callers each has."""
+    try:
+        d = subprocess.run(["git", "diff", "-U0", rev, "--"], cwd=ROOT, capture_output=True, text=True).stdout
+    except Exception as ex:
+        print(f"git diff failed: {ex}")
+        return
+    touched = defaultdict(set)
+    cur = None
+    for l in d.split("\n"):
+        if l.startswith("+++ b/"):
+            cur = l[6:]
+        elif l.startswith("@@") and cur:
+            m = re.search(r"\+(\d+)(?:,(\d+))?", l)
+            a = int(m.group(1)); n = int(m.group(2) or 1)
+            for ln in range(a, a + max(n, 1)):
+                touched[cur].add(ln)
+    out = [f"changes since {rev}:"]
+    for f, lines in sorted(touched.items()):
+        info = G_.g["files"].get(f)
+        syms = []
+        if info:
+            for sy in info["syms"]:
+                if sy["kind"] in ("heading",):
+                    continue
+                if any(sy["line"] <= ln <= sy["end"] for ln in lines) and not any(o is not sy and o["line"] >= sy["line"] and o["end"] <= sy["end"] and o["end"] > o["line"] and any(o["line"] <= ln <= o["end"] for ln in lines) for o in info["syms"] if o.get("parent") == sy["qual"]):
+                    syms.append(sy)
+        names = ", ".join(f"{x['qual']}({len(_neighbors(G_, x['id'], 'in'))} callers)" for x in syms[:12]) or "(outside symbols)"
+        out.append(f"  {f} [{len(lines)} lines]: {names}")
+    emit("\n".join(out) if touched else f"no changes since {rev}")
 
 
 def cmd_changed(G_):
@@ -893,6 +1218,19 @@ def main(argv):
         cmd_install_hook()
         return
     G_ = G(ensure_graph())
+    if cmd == "q":
+        # batch: several queries in one call, e.g. q "brief Motor::Ray" "callers World::RayCast"
+        import shlex
+        for k, sub in enumerate(args):
+            parts = shlex.split(sub)
+            if k:
+                print("─" * 40)
+            dispatch(G_, parts[0], parts[1:], None)
+        return
+    dispatch(G_, cmd, args, budget)
+
+
+def dispatch(G_, cmd, args, budget):
     if cmd == "map":
         cmd_map(G_, budget or 1800)
     elif cmd == "file":
@@ -900,7 +1238,14 @@ def main(argv):
     elif cmd == "find":
         cmd_find(G_, args[0])
     elif cmd == "show":
-        cmd_show(G_, args[0], int(args[1]) if len(args) > 1 else 0)
+        ctx = int(args[-1]) if len(args) > 1 and args[-1].isdigit() else 0
+        cmd_show(G_, [a for a in args if not a.isdigit()], ctx)
+    elif cmd == "brief":
+        cmd_brief(G_, args[0])
+    elif cmd == "refs":
+        cmd_refs(G_, args[0])
+    elif cmd == "diff":
+        cmd_diff(G_, args[0] if args else "HEAD")
     elif cmd == "callers":
         cmd_rel(G_, args[0], "in")
     elif cmd == "callees":
@@ -910,7 +1255,9 @@ def main(argv):
     elif cmd == "path":
         cmd_path(G_, args[0], args[1])
     elif cmd == "context":
-        cmd_context(G_, " ".join(args), budget or 900)
+        cmd_context(G_, " ".join(args), budget or 700)
+    elif cmd == "eval":
+        cmd_eval(G_)
     elif cmd == "changed":
         cmd_changed(G_)
     elif cmd == "report":

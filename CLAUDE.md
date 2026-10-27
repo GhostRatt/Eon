@@ -4,12 +4,15 @@ Kelvin's custom-engine sim: one AI agent, Jenny, living in a physical world (C++
 
 ## Read code through eongraph first (saves most of the tokens)
 `python3 tools/codegraph/eongraph.py <cmd>` (on Windows, `python`). It re-indexes itself when files change.
-- `context "<task words>"`: start every task here. It lists the relevant symbols with file:lines and notes (~500–900 tokens).
-- `show <Class::method>`: read just that function (with its leading comment), not the whole file.
-- `file <path>`: a file's outline (signatures, docs, members), without bodies.
-- `find <name>` · `callers <sym>` · `callees <sym>` · `impact <sym>` (what a change can break, incl. tests) · `path A B`
-- `map`: whole-repo overview · `changed`: files changed since the last index · `report`: hubs, big functions, TODOs, notes
+- `context "<task words>"`: start every task here. It gives the relevant symbols grouped by file with lines, docs and notes (~350 tokens).
+- `q "<cmd> <args>" "<cmd> <args>" ...`: batch several queries in ONE call. Prefer this to several separate calls.
+- `brief <sym>`: signature, doc, notes, members/methods, callers and callees in one view.
+- `show <sym> [<sym2> ...] [N]`: just those functions' source (N = extra context lines). Use it instead of `Read` on whole files.
+- `file <path>` outline · `find <name>` · `refs <identifier>` (which functions use a member/variable) · `callers`/`callees <sym>`
+- `impact <sym>` (what a change can break, incl. tests) · `path A B` · `diff [rev]` (symbols touched by uncommitted changes)
+- `map` overview · `changed` · `report` (hubs, big functions, TODOs, notes)
 - `note <sym> "<text>"`: save a durable gotcha/decision on a symbol (`tools/codegraph/notes.json`, committed). Add one whenever something took real effort to figure out.
+- `eval`: search-quality benchmark (`tools/codegraph/eval.json`). `python3 tools/codegraph/test_eongraph.py` runs the regression checks.
 
 Only `Read` a whole file when you're about to rewrite most of it. For edits, `show` the function, then `Edit` with the exact text.
 

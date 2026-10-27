@@ -1,0 +1,159 @@
+[
+ [
+  "climb ledge height",
+  [
+   "Motor::StartClimb"
+  ]
+ ],
+ [
+  "lever handle hinge throw",
+  [
+   "World::BuildEntity"
+  ]
+ ],
+ [
+  "breasts flatten floor squash",
+  [
+   "Character::ApplyTissueContact"
+  ]
+ ],
+ [
+  "fingertip pointing press small switch",
+  [
+   "Motor::UpdateHands"
+  ]
+ ],
+ [
+  "roll over flip yaw lying",
+  [
+   "Motor::UpdateStance"
+  ]
+ ],
+ [
+  "bed long enough to lie down",
+  [
+   "Motor::BedRoom"
+  ]
+ ],
+ [
+  "learn cause effect from timing",
+  [
+   "Learner::Happened",
+   "Learner::Observe"
+  ]
+ ],
+ [
+  "memory context token budget",
+  [
+   "MemoryGraph::Context"
+  ]
+ ],
+ [
+  "visibility occlusion field of view",
+  [
+   "Perception::Sense"
+  ]
+ ],
+ [
+  "lip sync text to visemes",
+  [
+   "LipSync::Say",
+   "TextToVisemes"
+  ]
+ ],
+ [
+  "battery internal resistance solve circuit",
+  [
+   "Circuit::Step",
+   "Circuit::Solve"
+  ]
+ ],
+ [
+  "wire clip latch break force",
+  [
+   "World::UpdateClips"
+  ]
+ ],
+ [
+  "hair strand collision with head",
+  [
+   "DangleSim::Update"
+  ]
+ ],
+ [
+  "feet flat floor push toes kneeling",
+  [
+   "ApplyPosture"
+  ]
+ ],
+ [
+  "fall asleep drowsy wake up",
+  [
+   "BodyState::UpdateSleep"
+  ]
+ ],
+ [
+  "garment layer remove streamer mode",
+  [
+   "Wardrobe::CanRemove"
+  ]
+ ],
+ [
+  "find a chair behind her to sit",
+  [
+   "Motor::FindSeat"
+  ]
+ ],
+ [
+  "carrying load slows walking speed",
+  [
+   "Motor::StepLocomotion"
+  ]
+ ],
+ [
+  "load zone json entities",
+  [
+   "LoadZone",
+   "ZoneFromJson"
+  ]
+ ],
+ [
+  "two bone ik pole",
+  [
+   "Character::SolveTwoBone"
+  ]
+ ],
+ [
+  "which functions does the motor call to raycast the ground",
+  [
+   "Motor::GroundAt",
+   "Motor::Ray"
+  ]
+ ],
+ [
+  "switch rocker state closed when angle positive",
+  [
+   "World::UpdateSwitchStates"
+  ]
+ ],
+ [
+  "save memory graph to json and replay journal",
+  [
+   "MemoryGraph::Load",
+   "MemoryGraph::Save"
+  ]
+ ],
+ [
+  "name things by colour size shape",
+  [
+   "Learner::Name",
+   "ColorWord"
+  ]
+ ],
+ [
+  "sim command line arguments spawn camera",
+  [
+   "main"
+  ]
+ ]
+]

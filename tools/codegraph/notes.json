@@ -1,0 +1,27 @@
+{
+ "ApplyPosture": [
+  "feet keep footRot captured before pelvis lean/tilt; footFollow (kneel/lie) lets them follow the shins then floor-push via LowestFootPoint"
+ ],
+ "Character::ApplyTissueContact": [
+  "breast/glute squash: scales the soft bone along the bone axis closest to world up, volume kept (spread 1/sqrt)"
+ ],
+ "Learner::Observe": [
+  "hands are processed before vision so an action and its effect in the same tick get linked; causeWindow 1s"
+ ],
+ "Motor::Ray": [
+  "rays that skip what she holds (feet would step onto a carried crate)"
+ ],
+ "Motor::StanceTargetsAt": [
+  "used when a hop changes her frame (rolling over: yaw+pi; bed lie-down/sit-up: yaw+-pi/2 and pos moves); applied on arrival in UpdateStance"
+ ],
+ "Motor::UpdateHands": [
+  "palm = hand_ capsule (kPalm 8cm past wrist), fingertip = tip_ body used when HandShape::Point; drive stiffness = mass*(2pi f)^2, so light bodies need high freq/mass (tip 0.2kg @15Hz)",
+  "on release: withdraw_ pulls the hand back 0.35s before relaxing (else it drops onto levers)"
+ ],
+ "Perception::Sense": [
+  "SENSOR FIREWALL: entity ids/names/types must never leave this function; tracks are scrambled ids keyed by zone+entity"
+ ],
+ "World::RayCast": [
+  "pass skipAgent=true from Jenny's code or rays hit her own hands/torso"
+ ]
+}

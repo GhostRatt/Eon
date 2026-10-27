@@ -24,3 +24,6 @@ out/
 
 # Licensed character model files (kept local, not in git)
 content/characters/*/source/
+
+# code graph cache (rebuilt by tools/codegraph/eongraph.py)
+.eongraph/

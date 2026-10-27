@@ -64,3 +64,9 @@ Put the Primrose files in `content/characters/jenny/source/` (git-ignored, they 
 | `engine/character/Wardrobe` | garments on her skeleton, layer rules (outer off first), bra/panty support for soft tissue, fit morphs, clo, streamer mode keeps underwear on |
 | `engine/mind` (memory graph) | sensor firewall (`Perception`: eyes from her head with occlusion + peripheral vision, hands, body feelings; opaque tracks only), `Learner` (her own names for things, on/near, weight, movable, glow; cause→effect from timing with observed/inferred/ambiguous provenance and evidence counts), `MemoryGraph` (traversal-based context within a token budget, questions → curiosity, communities, sleep consolidation, journaled persistence, HTML viewer). See Docs/Mind_Memory.md |
 | Mind bridge (LLM brain), OBS | next |
+
+## Code graph (for working on Eon with an AI assistant)
+`tools/codegraph/eongraph.py` maps the repo into a graph of symbols, calls and includes, built locally with tree-sitter (`pip install tree-sitter tree-sitter-cpp tree-sitter-python`; it falls back to regex without it).
+`context "<task>"`, `show <sym>`, `impact <sym>` and similar commands return only the code that matters, 10–100× fewer tokens than opening files.
+Notes on symbols live in `tools/codegraph/notes.json`. Assistant instructions are in `CLAUDE.md`.
+

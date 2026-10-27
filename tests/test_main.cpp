@@ -5,6 +5,7 @@
 
 #include "character/Character.h"
 #include "character/BodyState.h"
+#include "character/LipSync.h"
 #include "character/Motor.h"
 #include "character/Posture.h"
 #include "character/Wardrobe.h"
@@ -492,6 +493,142 @@ static void TestMotorGripsAndLifts(const std::string& contentDir) {
     CHECK(w.BodyPosition(body).y < b0.y + 0.05f);
 }
 
+static Zone FloorZone(float boxHeight, float boxZ) {
+    Zone z;
+    z.name = "Bench";
+    Entity floor; floor.id = 1; floor.name = "Floor"; floor.pos = {0, -0.05f, 0}; floor.size = {10, 0.1f, 10};
+    z.entities = {floor};
+    if (boxHeight > 0.f) {
+        Entity box; box.id = 2; box.name = "Ledge"; box.pos = {0, boxHeight * 0.5f, boxZ + 0.75f}; box.size = {2.f, boxHeight, 1.5f};
+        z.entities.push_back(box);
+    }
+    return z;
+}
+
+static void TestStances() {
+    World w;
+    w.SetZone(FloorZone(0.f, 0.f));
+    TestJenny j;
+    CHECK(j.Init(w, {0, 0, 0}, 0.f));
+    const RigMap& r = j.ch.Rig();
+    j.Run(w, 0.5);
+    const float hipStand = j.ch.BonePos(r.pelvis).y;
+    // feet flat on the floor while standing
+    CHECK_NEAR(j.ch.BonePos(r.foot[0]).y, j.ch.BonePos(r.foot[1]).y, 0.01);
+
+    struct Want { Stance s; float hipMin, hipMax; };
+    const Want wants[] = {
+        {Stance::Crouch, 0.25f * hipStand, 0.68f * hipStand},
+        {Stance::Kneel, 0.35f * hipStand, 0.62f * hipStand},
+        {Stance::Sit, 0.0f, 0.25f},
+        {Stance::LieBack, 0.0f, 0.2f},
+        {Stance::Crawl, 0.3f * hipStand, 0.62f * hipStand},
+        {Stance::Prone, 0.0f, 0.2f},
+        {Stance::Stand, 0.93f * hipStand, 1.02f * hipStand},
+    };
+    for (const Want& wt : wants) {
+        j.in.stance = wt.s;
+        j.Run(w, 5.0);
+        const float hip = j.ch.BonePos(r.pelvis).y;
+        if (j.motor.CurrentStance() != wt.s || hip < wt.hipMin || hip > wt.hipMax)
+            std::printf("  stance %s: got %s hip %.3f (want %.3f..%.3f)\n", StanceName(wt.s), StanceName(j.motor.CurrentStance()), hip, wt.hipMin, wt.hipMax);
+        CHECK(j.motor.CurrentStance() == wt.s);
+        CHECK(hip >= wt.hipMin && hip <= wt.hipMax);
+        if (wt.s == Stance::Crawl) {
+            CHECK(j.ch.BonePos(r.hand[0]).y < 0.15f && j.ch.BonePos(r.hand[1]).y < 0.15f);   // hands on the floor
+            const float z0 = j.motor.Position().z;
+            j.in.moveDir = {0, 0, 1};
+            j.Run(w, 2.0);
+            CHECK(j.motor.Position().z > z0 + 0.4f);                                        // crawls forward
+            j.in.moveDir = {};
+            j.Run(w, 0.5);
+        }
+        if (wt.s == Stance::Prone) CHECK(j.ch.BonePos(r.head).y < 0.45f);                  // head down near the floor
+        if (wt.s == Stance::LieBack) CHECK(j.ch.BonePos(r.head).y < 0.35f);
+    }
+}
+
+static void TestStepAndClimb() {
+    {   // a 20 cm step: she just walks up onto it
+        World w;
+        w.SetZone(FloorZone(0.2f, 0.6f));
+        TestJenny j;
+        CHECK(j.Init(w, {0, 0, 0}, 0.f));
+        j.in.moveDir = {0, 0, 1};
+        j.Run(w, 1.7);
+        CHECK(j.motor.Position().z > 1.0f);
+        CHECK_NEAR(j.motor.Position().y, 0.2, 0.04);   // up on the step
+        j.Run(w, 1.5);
+        CHECK_NEAR(j.motor.Position().y, 0.0, 0.04);   // and stepped down off the far side
+    }
+    {   // a 60 cm ledge: walking is blocked, climbing gets her on top; climbing back down returns her to the floor
+        World w;
+        w.SetZone(FloorZone(0.6f, 0.45f));
+        TestJenny j;
+        CHECK(j.Init(w, {0, 0, 0}, 0.f));
+        j.in.moveDir = {0, 0, 1};
+        j.Run(w, 1.5);
+        CHECK(j.motor.Position().y < 0.05f);
+        CHECK(j.motor.Feedback().bumped);
+        j.in.climb = true;
+        j.Run(w, 0.2);
+        CHECK(j.motor.Feedback().climbing);
+        j.in.climb = false;
+        j.in.moveDir = {};
+        j.Run(w, 3.5);
+        CHECK_NEAR(j.motor.Position().y, 0.6, 0.05);
+        CHECK(j.motor.Position().z > 0.5f);
+        // walk to the far edge: she stops instead of walking off
+        j.in.moveDir = {0, 0, 1};
+        j.Run(w, 3.0);
+        CHECK(j.motor.Feedback().atEdge);
+        CHECK_NEAR(j.motor.Position().y, 0.6, 0.05);
+        j.in.climb = true;
+        j.Run(w, 0.2);
+        j.in.climb = false;
+        j.in.moveDir = {};
+        j.Run(w, 3.5);
+        CHECK_NEAR(j.motor.Position().y, 0.0, 0.05);
+        CHECK(j.motor.Position().z > 2.0f);
+    }
+}
+
+static void TestLipSync() {
+    CharacterAsset a;
+    CHECK(ImportFbx(std::string(EON_TEST_DATA) + "/test_rig.fbx", a));
+    Character ch;
+    ch.Init(&a);
+    LipSync lips;
+    lips.Init(ch);
+    lips.Say("Hello, my name is Jenny.");
+    CHECK(lips.Speaking());
+    bool sawM = false, sawOpen = false;
+    for (const VisemeKey& k : lips.Track()) { sawM |= k.v == Viseme::MBP; sawOpen |= k.v == Viseme::AA || k.v == Viseme::OH; }
+    CHECK(sawM && sawOpen);
+    CHECK(lips.Track().back().time > 1.0f && lips.Track().back().time < 4.0f);   // natural speaking speed
+    CHECK(PhonemeToViseme("AA1") == Viseme::AA && PhonemeToViseme("M") == Viseme::MBP && PhonemeToViseme("UW") == Viseme::OO);
+    for (int f = 0; f < 600 && lips.Speaking(); ++f) lips.Update(ch, 1 / 60.f);
+    CHECK(!lips.Speaking());
+}
+
+static void TestSleep() {
+    BodyState b;
+    b.gameMinutesPerSecond = 60.f;
+    b.needs[static_cast<int>(Need::Fatigue)] = 85.f;
+    BodyInputs in;
+    for (int i = 0; i < 60 * 10 && !b.asleep; ++i) { b.UpdateSleep(true, 1 / 60.f); in.sleeping = b.asleep; b.Step(in, 1 / 60.f); }
+    CHECK(b.asleep);                                   // very tired and lying still: asleep within minutes
+    for (int i = 0; i < 60 * 60 * 8 && b.asleep; ++i) { b.UpdateSleep(true, 1 / 60.f); in.sleeping = b.asleep; b.Step(in, 1 / 60.f); }
+    CHECK(!b.asleep);                                  // woke up (rested or needing the toilet)
+    CHECK(b.Get(Need::Fatigue) < 40.f);
+
+    BodyState c;
+    c.gameMinutesPerSecond = 60.f;
+    c.needs[static_cast<int>(Need::Fatigue)] = 85.f;
+    for (int i = 0; i < 60 * 10; ++i) c.UpdateSleep(false, 1 / 60.f);
+    CHECK(!c.asleep);                                  // can't fall asleep while moving around
+}
+
 int main(int argc, char** argv) {
     const std::string content = argc > 1 ? argv[1] : EON_CONTENT_DIR;
     TestOpenBattery();
@@ -515,6 +652,10 @@ int main(int argc, char** argv) {
     TestMotorPressesButton(content);
     TestMotorWalksAndStopsAtWall(content);
     TestMotorGripsAndLifts(content);
+    TestStances();
+    TestStepAndClimb();
+    TestLipSync();
+    TestSleep();
     std::printf("%d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
 }

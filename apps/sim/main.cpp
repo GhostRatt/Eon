@@ -18,6 +18,7 @@
 #include "character/BodyState.h"
 #include "character/Dangles.h"
 #include "character/Face.h"
+#include "character/LipSync.h"
 #include "character/Motor.h"
 #include "character/Posture.h"
 #include "character/Wardrobe.h"
@@ -52,6 +53,8 @@ struct Body {
     Wardrobe wardrobe;
     Motor motor;
     MotorIntent intent;
+    LipSync lips;
+    std::string barefootMorph;
     bool hasWalkTarget = false;
     Vec3 walkTarget;
     float breathPhase = 0.f;
@@ -123,6 +126,10 @@ struct Body {
         ch.placement.r = Quat::AxisAngle({0, 1, 0}, cfg.value("yaw", 0.f) * 3.14159265f / 180.f);
         gfx.Init(ch, texDirs);
         face.Init(ch);
+        lips.Init(ch);
+        // barefoot: flatten the feet (the model's default arch is for heels) and stand her on her soles
+        barefootMorph = cfg.value("barefootMorph", std::string());
+        if (!barefootMorph.empty()) { ch.SetMorph(barefootMorph, 1.f); ch.RefitFloor(); }
         motor.Init(ch, world);
         hair.Init(ch, cfg.value("dangles", std::vector<std::string>{"hair_", "earring_"}));
         loaded = true;
@@ -149,7 +156,10 @@ struct Body {
             if (dist < 0.25f) { hasWalkTarget = false; intent.moveDir = {}; }
             else intent.moveDir = d.Normalized() * std::min(1.f, dist * 0.8f);
         }
-        motor.PrePhysics(ch, world, intent, dt);
+        // asleep: the body doesn't act (the mind is offline too)
+        MotorIntent in = intent;
+        if (state.asleep) { in = MotorIntent{}; in.stance = motor.CurrentStance(); }
+        motor.PrePhysics(ch, world, in, dt);
     }
 
     void Update(float dt, float ambientC, World& world) {
@@ -159,6 +169,10 @@ struct Body {
         inputs.clothingClo = wardrobe.TotalClo();
         inputs.exertion = posture.motion == TestMotion::Bounce ? 0.6f : posture.motion == TestMotion::WalkInPlace ? 0.35f
                                                                                                    : motor.Feedback().exertion;
+        const bool still = motor.Lying() && !motor.Feedback().inTransition && motor.Feedback().speed < 0.02f &&
+                           !intent.hands[0].reach && !intent.hands[1].reach;
+        state.UpdateSleep(still, dt);
+        inputs.sleeping = state.asleep;
         state.Step(inputs, dt);
         breathPhase = std::fmod(breathPhase + dt * state.breathRate, 1.f);
 
@@ -187,6 +201,7 @@ struct Body {
         fi.lookAt = intent.lookAt;
         fi.asleep = inputs.sleeping ? 1.f : 0.f;
         face.Update(ch, fi, dt);
+        lips.Update(ch, dt);
 
         ch.Skin();
         const std::vector<bool> vis = wardrobe.MeshVisibility(asset.meshes.size());
@@ -232,6 +247,9 @@ int main(int argc, char** argv) {
     float tempOverride = -1000.f, timeScale = 1.f;
     std::string wearArg;
     bool spawnArg = false, reachArg = false, walkArg = false;
+    int stanceArg = -1;
+    bool climbArg = false;
+    std::string sayArg;
     float spawn[3] = {0, 0, 0}, reachR[3] = {0, 0, 0}, walkTo[2] = {0, 0};
     bool powerAll = false, lightsOff = false, customCam = false;
     float settle = 0.f;
@@ -253,6 +271,9 @@ int main(int argc, char** argv) {
         else if (arg == "--spawn" && a + 3 < argc) { for (float& v : spawn) v = std::stof(argv[++a]); spawnArg = true; }
         else if (arg == "--reach" && a + 3 < argc) { for (float& v : reachR) v = std::stof(argv[++a]); reachArg = true; }
         else if (arg == "--walk" && a + 2 < argc) { for (float& v : walkTo) v = std::stof(argv[++a]); walkArg = true; }
+        else if (arg == "--stance" && a + 1 < argc) stanceArg = std::stoi(argv[++a]);
+        else if (arg == "--say" && a + 1 < argc) sayArg = argv[++a];
+        else if (arg == "--climb") climbArg = true;
         else if (arg == "--cam" && a + 6 < argc) { for (float& c : cam) c = std::stof(argv[++a]); customCam = true; }
         else zonePath = arg;
     }
@@ -302,6 +323,9 @@ int main(int argc, char** argv) {
         body->intent.lookAt = h.target;
     }
     if (walkArg) { body->walkTarget = {walkTo[0], 0.f, walkTo[1]}; body->hasWalkTarget = true; }
+    if (stanceArg >= 0) body->intent.stance = static_cast<Stance>(stanceArg);
+    if (!sayArg.empty()) body->lips.Say(sayArg);
+    if (climbArg) { body->intent.climb = true; body->intent.moveDir = {0, 0, 1}; }
     if (settle > 0.f) {
         for (float t = 0; t < settle; t += 1 / 60.f) {
             body->PrePhysics(world, 1 / 60.f);
@@ -365,6 +389,25 @@ int main(int argc, char** argv) {
         if (IsKeyPressed(KEY_U) && hasHit) { auto& h = body->intent.hands[0]; h.reach = true; h.target = hit.point; h.effort = 0.5f; }
         if (IsKeyPressed(KEY_G)) for (auto& h : body->intent.hands) if (h.reach) h.grip = !h.grip;
         if (IsKeyPressed(KEY_X)) for (auto& h : body->intent.hands) { h.reach = false; h.grip = false; }
+        // stances: Z cycles stand > crouch > kneel > sit > crawl > prone > lie on back
+        if (IsKeyPressed(KEY_Z)) body->intent.stance = static_cast<Stance>((static_cast<int>(body->intent.stance) + 1) % static_cast<int>(Stance::Count));
+        if (IsKeyPressed(KEY_BACKSPACE)) body->intent.stance = Stance::Stand;
+        // arrows: move in the direction the operator camera faces (walk, duck-walk, crawl, army crawl)
+        {
+            Vec3 camF = ToEon(Vector3Subtract(fly.cam.target, fly.cam.position));
+            camF.y = 0;
+            camF = camF.Normalized({0, 0, 1});
+            const Vec3 camR = camF.Cross({0, 1, 0});
+            Vec3 mv{};
+            if (IsKeyDown(KEY_UP)) mv += camF;
+            if (IsKeyDown(KEY_DOWN)) mv -= camF;
+            if (IsKeyDown(KEY_RIGHT)) mv += camR;
+            if (IsKeyDown(KEY_LEFT)) mv -= camR;
+            if (mv.Length() > 0.01f) { body->intent.moveDir = mv.Normalized(); body->hasWalkTarget = false; }
+            else if (!body->hasWalkTarget) body->intent.moveDir = {};
+        }
+        body->intent.climb = IsKeyDown(KEY_SPACE) || climbArg;
+        if (IsKeyPressed(KEY_O)) body->lips.Say("Hello? Is anyone there? I don't know how I got here.");
         if (IsKeyPressed(KEY_V)) for (auto& h : body->intent.hands) if (h.reach) h.target = h.target + Vec3{0, 0.25f, 0};   // lift
 
         body->PrePhysics(world, dt);
@@ -402,12 +445,15 @@ int main(int argc, char** argv) {
                                     st.Get(Need::Libido), body->wardrobe.TotalClo()), x, 74, 16, LIGHTGRAY);
                 DrawText(wr.c_str(), x, 98, 14, PINK);
                 DrawText(body->lastWardrobeMsg.c_str(), x, 118, 14, SKYBLUE);
+                const MotorFeedback& mf = body->motor.Feedback();
+                DrawText(TextFormat("stance %s%s%s%s  %.2f m/s%s", StanceName(mf.stance), mf.inTransition ? " (moving)" : "",
+                                    mf.climbing ? " CLIMB" : "", mf.atEdge ? " EDGE" : "", mf.speed, st.asleep ? "  ASLEEP" : ""), x, 136, 14, YELLOW);
                 DrawText(st.Describe(ambient()).c_str(), 16, GetScreenHeight() - 54, 16, PINK);
             }
             DrawText("OPERATOR VIEW (Jenny never sees this)", 16, 14, 18, ORANGE);
             DrawText(TextFormat("%s   t = %.1fs   %d fps", world.GetZone().name.c_str(), world.SimTime(), GetFPS()), 16, 38, 18, RAYWHITE);
             DrawText("1 Waiting Area  2 Test Zone 01  R reset  H hud", 16, 62, 16, LIGHTGRAY);
-            DrawText("RMB look  WASD/QE fly  LMB grab (wheel reach)  F push  MMB walk there  J/U reach R/L  G grip  V lift  X let go", 16, 82, 16, LIGHTGRAY);
+            DrawText("RMB look WASD/QE fly LMB grab F push | Jenny: MMB/arrows move Z stance Space climb J/U reach G grip V lift X drop O talk", 16, 82, 16, LIGHTGRAY);
             DrawText(status.c_str(), 16, 106, 16, SKYBLUE);
 
             if (hasHit) {

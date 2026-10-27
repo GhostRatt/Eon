@@ -82,5 +82,6 @@
       "clo": 0.02,
       "worn": false
     }
-  ]
+  ],
+  "barefootMorph": "FlatFeets"
 }

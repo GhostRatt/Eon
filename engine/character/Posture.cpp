@@ -59,6 +59,8 @@ void ApplyPosture(Character& ch, const PostureParams& p) {
         pel.t += Vec3{d.x / ps.x, d.y / ps.y, d.z / ps.z};
         ch.ComputeWorld();
         if (p.motion == TestMotion::Turn) ch.RotateBoneWorld(r.pelvis, turnW);
+        // whole-body tilt about the hip joint (pelvis bone): lying, crawling
+        if (std::fabs(p.bodyTilt.w) < 0.99999f) ch.RotateBoneWorld(r.pelvis, p.bodyTilt);
     }
 
     // Breathing: small chest rise
@@ -103,7 +105,13 @@ void ApplyPosture(Character& ch, const PostureParams& p) {
             foot.y += 0.08f * std::max(0.f, std::sin(ph));
         }
         if (p.footOverride) foot = p.footTarget[i];
-        ch.SolveTwoBone(r.thigh[i], r.calf[i], r.foot[i], foot, knee + fwd * 0.5f);
+        const Vec3 pole = p.kneePoleOverride ? p.kneePole[i] : knee + fwd * 0.5f;
+        ch.SolveTwoBone(r.thigh[i], r.calf[i], r.foot[i], foot, pole, 1.f, !p.footFollow);
+        // flat on whatever is under the foot (slopes, steps): tilt the foot to the ground normal
+        if (!p.footFollow) {
+            const Vec3 n = p.footNormal[i].Normalized({0, 1, 0});
+            if (n.y < 0.9999f) ch.RotateBoneWorld(r.foot[i], Quat::FromTo({0, 1, 0}, n));
+        }
     }
 
     // Arms: relaxed at the sides, or placed on the body to test contact
@@ -144,10 +152,21 @@ void ApplyPosture(Character& ch, const PostureParams& p) {
             target = p.handTarget[i];
             // elbow bends down and out, like a person reaching
             pole = sh + Vec3{0, -0.45f, 0} + left * (sideSign * 0.35f) - fwd * 0.2f;
+            if (p.elbowPoleOverride[i]) pole = p.elbowPole[i];
         }
         // relaxed arms: hands follow the forearm; contact poses keep the palm orientation
         const bool relaxed = p.motion != TestMotion::HandsOnChest && p.motion != TestMotion::HandsOnHips && p.motion != TestMotion::ArmsCrossed;
         ch.SolveTwoBone(a, b, c, target, pole, 1.f, !relaxed && !p.handOverride[i]);
+        if (p.palmDown[i]) {
+            // palm flat on the floor: the hand's "down" (toward the palm) is found from the bind pose:
+            // bind hands hang with palms facing the thighs, so palm normal = toward the body midline
+            const Vec3 handDir = (ch.BonePos(c) - ch.BonePos(b)).Normalized({0, -1, 0});
+            Vec3 flatFwd = Vec3{handDir.x, 0, handDir.z}.Normalized(fwd);
+            const Quat cur = ch.World()[c].r;
+            const Vec3 palmNow = cur.Rotate(ch.World()[c].r.Conjugate().Rotate(left * -sideSign));
+            ch.RotateBoneWorld(c, Quat::FromTo(handDir, flatFwd));
+            (void)palmNow;
+        }
     }
 
     // Head turns toward what she looks at (neck takes 40%, head the rest, limited like a real neck)
@@ -168,6 +187,10 @@ void ApplyPosture(Character& ch, const PostureParams& p) {
         };
         if (r.neck >= 0) ch.RotateBoneWorld(r.neck, part(q, 0.4f));
         ch.RotateBoneWorld(r.head, part(q, 0.6f));
+    }
+    if (std::fabs(p.headPitch) > 1e-3f && r.head >= 0) {
+        if (r.neck >= 0) ch.RotateBoneWorld(r.neck, Quat::AxisAngle(left, -p.headPitch * 0.5f));
+        ch.RotateBoneWorld(r.head, Quat::AxisAngle(left, -p.headPitch * 0.5f));
     }
 }
 

@@ -17,6 +17,9 @@ struct HandIntent {
     float effort = 0.5f;       // 0..1 of max arm strength (pressing harder, lifting heavier)
 };
 
+enum class Stance : int { Stand, Crouch, Kneel, Sit, Crawl, Prone, LieBack, Count };
+const char* StanceName(Stance s);
+
 struct MotorIntent {
     Vec3 moveDir;              // world XZ direction, length = speed fraction 0..1 (1 = brisk walk)
     bool hasFace = false;      // turn the body to face this yaw (radians, 0 = +Z)
@@ -24,6 +27,8 @@ struct MotorIntent {
     bool hasLook = false;      // head/eyes look here
     Vec3 lookAt;
     std::array<HandIntent, 2> hands;   // 0 left, 1 right
+    Stance stance = Stance::Stand;     // body position to get into (she moves through the in-between ones)
+    bool climb = false;                // with moveDir: climb up onto / down off what's in front of her
 };
 
 // What her body physically feels from moving (fed to BodyState / the mind's proprioception).
@@ -35,6 +40,10 @@ struct MotorFeedback {
     std::array<bool, 2> handBlocked{};// hand can't get to where it's trying to go
     std::array<float, 2> heldMass{}; // kg of what's in the hand (felt as weight)
     bool bumped = false;             // walked into something solid this frame
+    bool atEdge = false;             // a drop she won't just walk off
+    bool climbing = false;
+    Stance stance = Stance::Stand;   // current (or the one she is moving out of)
+    bool inTransition = false;
 };
 
 class Motor {
@@ -51,6 +60,8 @@ public:
     void Teleport(Character& ch, const Vec3& pos, float yaw);
     int HandBody(int i) const { return hand_[i]; }
     float Lean() const { return lean_; }
+    Stance CurrentStance() const { return stance_; }
+    bool Lying() const { return stance_ == Stance::Prone || stance_ == Stance::LieBack; }
     float Deficit(int i) const { return deficit_[i]; }
 
     // Tuning (adult woman)
@@ -65,6 +76,23 @@ private:
     void EnsureBodies(Character& ch, World& world);
     void StepLocomotion(Character& ch, World& world, const MotorIntent& in, float dt);
     void UpdateHands(Character& ch, World& world, const MotorIntent& in, float dt);
+    void UpdateStance(const MotorIntent& in, float dt);
+    void StartClimb(Character& ch, World& world, const MotorIntent& in);
+
+    struct Dims { float thigh = 0.42f, shin = 0.42f, hipH = 0.95f, ankleH = 0.09f, torso = 0.45f, arm = 0.5f; };
+    struct Targets {
+        Vec3 pelvisOffset;
+        Quat tilt;
+        float lean = 0.f, headPitch = 0.f;
+        Vec3 foot[2], kneePole[2], hand[2], elbowPole[2];
+        bool footFollow = false, palmDown[2] = {false, false}, elbowOverride[2] = {false, false};
+    };
+    Targets StanceTargets(Character& ch, World& world, Stance s, float dt);
+    void GaitFeet(Character& ch, World& world, float dt, float stride, float lift, Vec3 out[2]);
+    static Targets Blend(const Targets& a, const Targets& b, float w);
+    float GroundAt(World& world, const Vec3& p, Vec3* normal = nullptr) const;
+    float StanceSpeed(Stance s) const;
+    Dims dims_;
 
     int generation_ = -1;
     int torso_ = -1;
@@ -84,8 +112,20 @@ private:
     std::array<Vec3, 2> footPlant_{};
     std::array<Vec3, 2> footFrom_{};
     std::array<bool, 2> footSwing_{};
+    std::array<Vec3, 2> footNormal_{Vec3{0, 1, 0}, Vec3{0, 1, 0}};
     bool init_ = false;
     MotorFeedback fb_;
+
+    Stance stance_ = Stance::Stand;      // where she is (or coming from)
+    Stance next_ = Stance::Stand;        // where she is going this hop
+    float trans_ = 1.f, transDur_ = 0.7f;
+    float crawlPhase_ = 0.f;
+
+    // climbing
+    bool climbing_ = false, climbDown_ = false;
+    float climbT_ = 0.f, climbDur_ = 2.f;
+    Vec3 climbFrom_, climbEdge_, climbTo_, climbDir_;
+    float climbTopY_ = 0.f;
 };
 
 } // namespace eon

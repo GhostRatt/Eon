@@ -88,9 +88,30 @@ void BodyState::Step(const BodyInputs& in, float realDt) {
     heartRate += (targetHr - heartRate) * std::clamp(realDt * 0.3f, 0.f, 1.f);
 }
 
+void BodyState::UpdateSleep(bool lyingStill, float realDt) {
+    const float minutes = realDt * gameMinutesPerSecond;
+    const float fatigue = Get(Need::Fatigue);
+    const bool uncomfortable = Get(Need::Bladder) > 90.f || Get(Need::Hunger) > 95.f || Get(Need::Thirst) > 95.f ||
+                               thermal == Thermal::Freezing || thermal == Thermal::Hot;
+    if (asleep) {
+        if (!lyingStill || uncomfortable || fatigue < 3.f) { asleep = false; drowsy = 0.f; }
+        return;
+    }
+    if (lyingStill && fatigue > 25.f && !uncomfortable) {
+        // very tired: a few minutes; mildly tired: half an hour
+        const float onsetMin = 30.f - 27.f * std::clamp((fatigue - 25.f) / 60.f, 0.f, 1.f);
+        drowsy += minutes / onsetMin;
+        if (drowsy >= 1.f) asleep = true;
+    } else {
+        drowsy = std::max(0.f, drowsy - minutes / 5.f);
+    }
+}
+
 std::string BodyState::Describe(float ambientC) const {
+    if (asleep) return "(asleep)";
     const char* feel[] = {"freezing", "cold", "comfortable", "warm", "hot"};
     std::string s = std::string("I feel ") + feel[static_cast<int>(thermal)];
+    if (drowsy > 0.5f) s += ", drowsy";
     if (sweat > 0.05f) s += sweat > 0.6f ? ", sweating a lot" : ", a little sweaty";
     if (shiver > 0.05f) s += ", shivering";
     std::string needsTxt;

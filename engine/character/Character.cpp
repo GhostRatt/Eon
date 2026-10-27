@@ -148,6 +148,28 @@ Vec3 Character::BindPos(int bone) const {
     return placement.t + placement.r.Rotate(Quat::AxisAngle({0, 1, 0}, modelYaw).Rotate(p));
 }
 
+float Character::RefitFloor() {
+    const Transform keep = placement;
+    std::vector<Transform> keepLocal = local_;
+    placement = {};
+    placement.t = {0, 0, 0};
+    ResetPose();
+    Skin();
+    float lo = 1e9f;
+    for (size_t m = 0; m < asset_->meshes.size(); ++m) {
+        if (asset_->meshes[m].garment >= 0) continue;
+        for (const Vec3& p : outPos_[m]) lo = std::min(lo, p.y);
+    }
+    placement = keep;
+    local_ = keepLocal;
+    if (lo > 1e8f) return 0.f;
+    const float old = floorOffset;
+    floorOffset = -lo;
+    placement.t.y += floorOffset - old;
+    ComputeWorld();
+    return floorOffset - old;
+}
+
 void Character::ResetPose() {
     local_.resize(asset_->bones.size());
     world_.resize(asset_->bones.size());

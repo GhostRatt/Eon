@@ -90,6 +90,10 @@ public:
 
     float Height() const { return height_; }
 
+    // Re-measures how far her soles are above the floor with the current morphs (e.g. FlatFeets when barefoot)
+    // and updates floorOffset so she stands on y = 0. Returns the change (m).
+    float RefitFloor();
+
 private:
     void FitCapsules();
     void SetupSoftBones();

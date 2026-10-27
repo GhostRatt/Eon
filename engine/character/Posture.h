@@ -27,6 +27,17 @@ struct PostureParams {
     float leanTwist = 0.f;              // turn the shoulders toward the reaching side (radians)
     bool hasLook = false;
     Vec3 lookAt;
+
+    // Stance controls (crouch / kneel / crawl / lie...)
+    Quat bodyTilt;                      // world rotation of the whole body about the hips (pitch to lie down)
+    bool kneePoleOverride = false;
+    Vec3 kneePole[2];                   // world points the knees bend toward
+    bool footFollow = false;            // feet follow the shins (pointed toes: kneeling, lying) instead of staying flat
+    Vec3 footNormal[2] = {{0, 1, 0}, {0, 1, 0}};   // ground normal under each foot (flat feet on slopes)
+    bool elbowPoleOverride[2] = {false, false};
+    Vec3 elbowPole[2];
+    bool palmDown[2] = {false, false};  // planted hand: palm flat on the surface below
+    float headPitch = 0.f;              // extra head nod (radians, + = chin up) e.g. lifting the head when prone
 };
 
 // Builds the full pose for this frame (resets to bind first). Call before soft tissue/limb collision.

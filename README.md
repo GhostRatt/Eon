@@ -31,7 +31,8 @@ Put the Primrose files in `content/characters/jenny/source/` (git-ignored, they 
   Jenny test keys: M cycle test motion (idle, bounce, walk in place, hands on chest/hips, arms crossed, turn), 3-8 put on / take off garments,
   T room temperature (zone / 8°C / 38°C), Y game time x60, P streamer mode, C collision capsules, K skeleton.
   Motor tests (what her mind will do later): middle-click the floor to walk there, J / U reach right / left hand to the cursor,
-  G close/open the reaching hand, V lift it 25 cm, X relax both arms.
+  G close/open the reaching hand, V lift it 25 cm, X relax both arms, arrows move her (relative to your camera),
+  Z cycle stance (Backspace = stand), hold Space to climb onto/off what's in front of her, O make her talk.
 - **Editor:** EDIT mode — LMB select, arrows/PgUp/PgDn move, R/F rotate, N new box, Ctrl+D duplicate, Del delete, Ctrl+S save. P toggles PLAY mode (physics on, grab/push/Space to test); stopping restores the layout.
 
 ## Status
@@ -50,5 +51,10 @@ Put the Primrose files in `content/characters/jenny/source/` (git-ignored, they 
 | `engine/character/Dangles` | hair + earring bone chains (33 chains / 129 bones): gravity, swing, styled shape, head/torso collision |
 | `engine/character/BodyState` | needs, core temp, sweat → skin sheen, shiver tremor, breathing rate/depth, heart rate, mood, body-sense text |
 | `engine/character/Motor` | her motor primitives (walk direction, face, look, per-hand reach/grip/effort): real torso + hand bodies in Jolt, walls stop her, light things get shoved, hands are muscle-driven (60 N max) so they get blocked by surfaces and physically push buttons, grips slip past 120 N, bends at the hips to reach across a table, planted-foot gait with hip bob and arm swing |
+| Stances | stand, crouch (duck-walk), kneel, sit, hands-and-knees crawl, prone (army crawl), lie on back (bed or floor); she moves through the in-between positions (stand → crouch → kneel → crawl → prone) |
+| Feet & ground | barefoot `FlatFeets` + floor refit so soles sit flat; per-foot ground contact and normals; steps up/down to 38 cm; stops at drops |
+| Climbing | Space with a direction: hands on the edge, knee up, stand on top (30–135 cm); climbs down off ledges too |
+| `engine/character/LipSync` | text → visemes (or TTS phoneme timings, or live amplitude) on ARKit mouth morphs with coarticulation |
+| Sleep | lying still while tired → drowsy → asleep (eyes shut, slow breathing, recovers fatigue); wakes rested or when cold/hot/needing the toilet |
 | `engine/character/Wardrobe` | garments on her skeleton, layer rules (outer off first), bra/panty support for soft tissue, fit morphs, clo, streamer mode keeps underwear on |
 | Mind bridge + sensor firewall, OBS | step 5 |

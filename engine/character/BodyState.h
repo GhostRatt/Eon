@@ -38,6 +38,11 @@ public:
     float heartRate = 70.f;      // bpm
     Thermal thermal = Thermal::Comfortable;
 
+    // Sleep: lying still and tired long enough she drifts off; rested, or too uncomfortable, she wakes.
+    bool asleep = false;
+    float drowsy = 0.f;          // 0..1 builds while lying still
+    void UpdateSleep(bool lyingStill, float realDt);
+
     float Get(Need n) const { return needs[static_cast<int>(n)]; }
     void Satisfy(Need n, float amount);
     std::string Describe(float ambientC) const;   // first-person-ish body sense for the mind (no world names)

@@ -245,9 +245,19 @@ void CharacterRenderer::SetMeshVisible(size_t assetMesh, bool v) {
     if (assetMesh < visible_.size()) visible_[assetMesh] = v;
 }
 
+std::vector<bool> CharacterRenderer::DrawnMeshes() const {
+    std::vector<bool> d(visible_.size(), false);
+    for (const Chunk& c : chunks_) {
+        const bool hidden = c.material >= 0 && c.material < (int)mats_.size() && mats_[c.material].hidden;
+        if (!hidden && c.assetMesh < d.size() && visible_[c.assetMesh]) d[c.assetMesh] = true;
+    }
+    return d;
+}
+
 void CharacterRenderer::Upload(const Character& ch) {
     for (Chunk& c : chunks_) {
         if (!visible_[c.assetMesh]) continue;
+        if (c.material >= 0 && c.material < (int)mats_.size() && mats_[c.material].hidden) continue;   // never drawn: don't upload
         const auto& P = ch.SkinnedPos(c.assetMesh);
         const auto& N = ch.SkinnedNrm(c.assetMesh);
         const size_t nv = c.srcVertex.size();

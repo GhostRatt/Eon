@@ -242,6 +242,7 @@ private:
 
     Zone zone_;
     Circuit circuit_;
+    std::unordered_map<int, int> mainBody_;   // entity id -> its main body index
     std::unique_ptr<Physics> physics_;
     std::string path_;
 

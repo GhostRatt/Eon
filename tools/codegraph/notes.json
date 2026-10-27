@@ -11,6 +11,9 @@
  "Character::ApplyTissueContact": [
   "breast/glute squash: scales the soft bone along the bone axis closest to world up, volume kept (spread 1/sqrt)"
  ],
+ "Character::Skin": [
+  "Perf: morphs applied incrementally (only weights that moved, by dw; full rebuild every ~4000 edits for drift), bone matrices blended per vertex then one transform, all meshes in one ParallelFor (core/Jobs, persistent pool). Meshes masked off by SetSkinMask (hidden materials, unworn garments) are skipped. 0.96 -> 0.39 ms on 2 cores."
+ ],
  "ExpandPrefabs": [
   "Parts get ids instance*1000+n, so Zone::NextId skips _from/spawned entities (else ids explode). Buttons on a cabinet face need ~5 mm standoff from neighbours (Jolt margin) or they never travel."
  ],
@@ -45,7 +48,13 @@
  "World::FlowStream": [
   "body streams (peeing) start inside her torso collider: they raycast with skipAgent=true; tap streams start 6mm below the spout so they don't hit the tap"
  ],
+ "World::MainBodyOf": [
+  "Hash map filled in AddBody (first Main body per entity), cleared in Reset. Was a linear scan of every body; called a lot per step."
+ ],
  "World::RayCast": [
   "pass skipAgent=true from Jenny's code or rays hit her own hands/torso"
+ ],
+ "ZoneRenderer::Draw": [
+  "All boxes go into dynamic meshes of 2700 boxes (16-bit indices): 1 draw call per batch. Color in vertex rgb, emissive/4 in vertex alpha. Backface culling off for them (generated winding not consistent)."
  ]
 }

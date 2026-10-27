@@ -110,6 +110,8 @@ public:
 
     // ---- Skinning (CPU, multithreaded). Output in world space. ----
     void Skin();
+    // Meshes that won't be drawn (hidden materials, garments not worn) are skipped by Skin(). Default: all.
+    void SetSkinMask(const std::vector<bool>& drawn);
     const std::vector<Vec3>& SkinnedPos(size_t mesh) const { return outPos_[mesh]; }
     const std::vector<Vec3>& SkinnedNrm(size_t mesh) const { return outNrm_[mesh]; }
 
@@ -149,6 +151,12 @@ private:
     std::vector<SoftBone> soft_;
     std::unordered_map<std::string, float> morphWeights_;
     std::vector<std::vector<Vec3>> outPos_, outNrm_;
+    // skinning caches: morphed rest positions per mesh (rebuilt only when that mesh's morph weights change)
+    std::vector<std::vector<Vec3>> morphBase_;
+    std::vector<std::vector<float>> morphW_;
+    std::vector<uint8_t> skinMask_;   // 0 = not drawn this frame: don't skin it
+    std::vector<Mat4> skinMats_;
+    unsigned morphEdits_ = 0;
     std::vector<Vec3> limbDelta_;   // smoothed hand/elbow corrections
     float height_ = 1.7f;
 };

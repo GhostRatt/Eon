@@ -74,6 +74,7 @@ add_library(eon_core STATIC
     engine/core/World.cpp
     engine/core/World_Matter.cpp
     engine/core/World_Doors.cpp
+    engine/core/Jobs.cpp
     engine/core/World_Scripts.cpp
     engine/core/Physics.cpp)
 target_include_directories(eon_core PUBLIC engine)
@@ -140,6 +141,9 @@ if(EON_BUILD_TESTS)
     target_link_libraries(eon_tests PRIVATE eon_core eon_character eon_mind)
     target_compile_definitions(eon_tests PRIVATE EON_TEST_DATA="${CMAKE_SOURCE_DIR}/tests/data")
     add_test(NAME eon_tests COMMAND eon_tests ${CMAKE_SOURCE_DIR}/content)
+    # headless frame-cost benchmark (CPU only): eon_bench [zone] [--frames N] [--rig]
+    add_executable(eon_bench apps/bench/main.cpp)
+    target_link_libraries(eon_bench PRIVATE eon_core eon_character eon_mind)
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_FOUND)
         add_test(NAME eongraph COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/codegraph/test_eongraph.py)

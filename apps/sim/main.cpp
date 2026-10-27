@@ -237,9 +237,10 @@ struct Body {
             if (matter.Jaw() > 0.01f) ch.SetMorph("jawOpen", std::max(ch.GetMorph("jawOpen"), matter.Jaw()));
         }
 
-        ch.Skin();
         const std::vector<bool> vis = wardrobe.MeshVisibility(asset.meshes.size());
         for (size_t m = 0; m < vis.size(); ++m) gfx.SetMeshVisible(m, vis[m]);
+        ch.SetSkinMask(gfx.DrawnMeshes());   // garments not worn and hidden materials aren't skinned
+        ch.Skin();
         gfx.wetness = std::max(state.wetness, 0.f);
         gfx.Upload(ch);
 

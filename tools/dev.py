@@ -7,6 +7,7 @@
   python3 tools/dev.py sheet OUT A B C ... [--cols 2] [--full]   contact sheet (HUD cropped unless --full)
   python3 tools/dev.py handoff                    compact state of the work (for a new session / after compaction)
   python3 tools/dev.py viz                        writes the code-graph visual (out/eon_codegraph.html)
+  python3 tools/dev.py bench [zone] [--frames N] [--rig]   CPU ms/frame of the whole Jenny pipeline, per stage
 """
 import os
 import re
@@ -170,11 +171,23 @@ def cmd_viz(args):
     return r.returncode
 
 
+def cmd_bench(args):
+    """Builds and runs eon_bench: CPU ms per frame of Jenny's whole pipeline, stage by stage."""
+    b = sh(["cmake", "--build", "build", "--target", "eon_bench"])
+    if b.returncode != 0:
+        print(b.stdout[-1500:])
+        return 1
+    exe = os.path.join("build", "bin", "eon_bench" + (".exe" if os.name == "nt" else ""))
+    r = sh([exe, *args])
+    print(r.stdout.strip() or r.stderr.strip())
+    return r.returncode
+
+
 def main(argv):
     if len(argv) < 2 or argv[1] in ("-h", "--help"):
         print(__doc__)
         return 0
-    cmds = {"check": cmd_check, "test": cmd_test, "shot": cmd_shot, "sheet": cmd_sheet, "handoff": cmd_handoff, "viz": cmd_viz}
+    cmds = {"check": cmd_check, "test": cmd_test, "shot": cmd_shot, "sheet": cmd_sheet, "handoff": cmd_handoff, "viz": cmd_viz, "bench": cmd_bench}
     if argv[1] not in cmds:
         print(__doc__)
         return 1

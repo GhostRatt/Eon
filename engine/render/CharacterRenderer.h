@@ -36,6 +36,8 @@ public:
 
     // Optional: per-mesh visibility (clothing layers, censoring)
     void SetMeshVisible(size_t assetMesh, bool visible);
+    // Asset meshes that will actually be drawn (visible and not only hidden materials): feed to Character::SetSkinMask
+    std::vector<bool> DrawnMeshes() const;
     float wetness = 0.f;   // 0..1 from the body sim
     size_t LoadedTextures() const { return loadedTextures_; }
     std::vector<std::string> MissingTextures() const { return missing_; }

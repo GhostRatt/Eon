@@ -81,6 +81,7 @@ void World::Reset() {
     }
     physics_->Clear();
     bodies_.clear();
+    mainBody_.clear();
     terminals_.clear();
     clips_.clear();
     buttons_.clear();
@@ -137,6 +138,7 @@ int World::AddBody(const BodyDesc& d, int entity, Role role, const Vec3& drawSiz
     b.color = color;
     b.drawOffset = drawOffset;
     bodies_.push_back(b);
+    if (role == Role::Main) mainBody_.emplace(entity, static_cast<int>(bodies_.size()) - 1);   // first main body wins
     return static_cast<int>(bodies_.size()) - 1;
 }
 
@@ -728,9 +730,8 @@ BodyHandle World::HandleOf(int body) const { return body >= 0 && body < (int)bod
 Vec3 World::BodyPosition(int body) const { return ToWorld(body, {0, 0, 0}); }
 
 int World::MainBodyOf(int entityId) const {
-    for (int i = 0; i < (int)bodies_.size(); ++i)
-        if (bodies_[i].entity == entityId && bodies_[i].role == Role::Main) return i;
-    return -1;
+    const auto it = mainBody_.find(entityId);   // hub: called from scripts, matter, doors, tests every step
+    return it == mainBody_.end() ? -1 : it->second;
 }
 
 int World::ClipAttachedEntity(int wireEntityId, int end) const {

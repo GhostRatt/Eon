@@ -1,5 +1,7 @@
 #include "Character.h"
 
+#include "core/Jobs.h"
+
 #include <algorithm>
 #include <cmath>
 #include <thread>
@@ -695,56 +697,83 @@ std::vector<std::string> Character::MorphNames() const {
 
 // ---------------- Skinning ----------------
 
+void Character::SetSkinMask(const std::vector<bool>& drawn) {
+    skinMask_.assign(asset_->meshes.size(), 1);
+    for (size_t i = 0; i < drawn.size() && i < skinMask_.size(); ++i) skinMask_[i] = drawn[i] ? 1 : 0;
+}
+
 void Character::Skin() {
-    std::vector<Mat4> skin(asset_->bones.size());
-    for (size_t i = 0; i < skin.size(); ++i) skin[i] = Mat4::FromTransform(world_[i]) * asset_->bones[i].invBind;
+    // 3x4 skinning matrices (bone world * inverse bind)
+    const size_t nb = asset_->bones.size();
+    skinMats_.resize(nb);
+    for (size_t i = 0; i < nb; ++i) skinMats_[i] = Mat4::FromTransform(world_[i]) * asset_->bones[i].invBind;
+    const size_t nm = asset_->meshes.size();
+    if (morphBase_.size() != nm) { morphBase_.assign(nm, {}); morphW_.assign(nm, {}); }
 
-    const unsigned threads = std::max(1u, std::min(8u, std::thread::hardware_concurrency()));
-    for (size_t mi = 0; mi < asset_->meshes.size(); ++mi) {
+    // morphs (rest space), cached: most frames only a few face meshes change
+    struct Range { size_t mesh, begin, end; };
+    std::vector<Range> todo;
+    for (size_t mi = 0; mi < nm; ++mi) {
+        if (!skinMask_.empty() && !skinMask_[mi]) continue;
         const SkinMesh& m = asset_->meshes[mi];
-        const size_t n = m.pos.size();
-
-        // morphs first (rest space)
-        std::vector<Vec3> base;
-        const std::vector<Vec3>* src = &m.pos;
-        bool morphed = false;
-        for (const Morph& mo : m.morphs) {
-            const float w = GetMorph(mo.name);
-            if (std::fabs(w) < 1e-4f) continue;
-            if (!morphed) { base = m.pos; morphed = true; }
-            for (size_t k = 0; k < mo.index.size(); ++k) base[mo.index[k]] += mo.dpos[k] * w;
+        std::vector<float>& wv = morphW_[mi];
+        std::vector<Vec3>& base = morphBase_[mi];
+        const bool fresh = wv.size() != m.morphs.size() || base.size() != m.pos.size() || ++morphEdits_ > 4000;
+        if (fresh) {   // rebuild from rest (first time, and now and then so float drift can't build up)
+            if (morphEdits_ > 4000) morphEdits_ = 0;
+            wv.assign(m.morphs.size(), 0.f);
+            base = m.pos;
         }
-        if (morphed) src = &base;
-
-        std::vector<Vec3>& op = outPos_[mi];
-        std::vector<Vec3>& on = outNrm_[mi];
-        auto work = [&](size_t begin, size_t end) {
-            for (size_t v = begin; v < end; ++v) {
-                Vec3 p{}, nn{};
+        // only the morphs whose weight moved are applied, by how much they moved (a blink touches a few hundred verts)
+        for (size_t k = 0; k < m.morphs.size(); ++k) {
+            float w = GetMorph(m.morphs[k].name);
+            if (std::fabs(w) < 1e-4f) w = 0.f;
+            const float dw = w - wv[k];
+            if (std::fabs(dw) <= 1e-5f) continue;
+            const Morph& mo = m.morphs[k];
+            for (size_t q = 0; q < mo.index.size(); ++q) base[mo.index[q]] += mo.dpos[q] * dw;
+            wv[k] = w;
+            ++morphEdits_;
+        }
+        todo.push_back({mi, 0, m.pos.size()});
+    }
+    // one flat job over every vertex of every drawn mesh, on the worker pool
+    std::vector<size_t> start(todo.size() + 1, 0);
+    for (size_t t = 0; t < todo.size(); ++t) start[t + 1] = start[t] + (todo[t].end - todo[t].begin);
+    ParallelFor(start.back(), 2048, [&](size_t b, size_t e) {
+        size_t t = std::upper_bound(start.begin(), start.end(), b) - start.begin() - 1;
+        while (b < e && t < todo.size()) {
+            const size_t mi = todo[t].mesh;
+            const SkinMesh& m = asset_->meshes[mi];
+            const std::vector<Vec3>& src = morphBase_[mi];
+            std::vector<Vec3>& op = outPos_[mi];
+            std::vector<Vec3>& on = outNrm_[mi];
+            const size_t v0 = b - start[t], v1 = std::min(e, start[t + 1]) - start[t];
+            for (size_t v = v0; v < v1; ++v) {
+                // blend the bone matrices first, then transform once
                 const auto& j = m.joints[v];
                 const auto& w = m.weights[v];
+                float M[12] = {};
                 for (int k = 0; k < 4; ++k) {
                     if (w[k] <= 0.f) continue;
-                    const Mat4& M = skin[j[k]];
-                    p += M.Point((*src)[v]) * w[k];
-                    nn += M.Dir(m.nrm[v]) * w[k];
+                    const float* s = skinMats_[j[k]].m;
+                    const float wk = w[k];
+                    M[0] += s[0] * wk; M[1] += s[1] * wk; M[2] += s[2] * wk;
+                    M[3] += s[4] * wk; M[4] += s[5] * wk; M[5] += s[6] * wk;
+                    M[6] += s[8] * wk; M[7] += s[9] * wk; M[8] += s[10] * wk;
+                    M[9] += s[12] * wk; M[10] += s[13] * wk; M[11] += s[14] * wk;
                 }
-                op[v] = p;
-                on[v] = nn.Normalized();
+                const Vec3& p = src[v];
+                const Vec3& n = m.nrm[v];
+                op[v] = {M[0] * p.x + M[3] * p.y + M[6] * p.z + M[9], M[1] * p.x + M[4] * p.y + M[7] * p.z + M[10], M[2] * p.x + M[5] * p.y + M[8] * p.z + M[11]};
+                const Vec3 nn{M[0] * n.x + M[3] * n.y + M[6] * n.z, M[1] * n.x + M[4] * n.y + M[7] * n.z, M[2] * n.x + M[5] * n.y + M[8] * n.z};
+                const float l2 = nn.x * nn.x + nn.y * nn.y + nn.z * nn.z;
+                on[v] = l2 > 1e-20f ? nn * (1.f / std::sqrt(l2)) : Vec3{0, 1, 0};
             }
-        };
-        if (n < 20000 || threads == 1) {
-            work(0, n);
-        } else {
-            std::vector<std::thread> pool;
-            const size_t chunk = (n + threads - 1) / threads;
-            for (unsigned t = 0; t < threads; ++t) {
-                const size_t b = t * chunk, e = std::min(n, b + chunk);
-                if (b < e) pool.emplace_back(work, b, e);
-            }
-            for (std::thread& th : pool) th.join();
+            b = start[t + 1];
+            ++t;
         }
-    }
+    });
 }
 
 } // namespace eon

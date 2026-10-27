@@ -21,6 +21,7 @@ Only `Read` a whole file when you're about to rewrite most of it. For edits, `sh
 - `python3 tools/dev.py test <filter>`: just the matching tests (`eon_tests --only X`, `--list`, `--times`).
 - `python3 tools/dev.py shot NAME [zone.json] [sim args]` writes `out/shots/NAME.png`; `dev.py sheet OUT A B C [--cols 2] [--full]` makes a contact sheet with the HUD cropped. Read only the sheet, not every shot.
 - `python3 tools/dev.py handoff`: a compact state of the work (commits, uncommitted symbols, notes, TODOs). Run it first after a context reset.
+- `python3 tools/dev.py bench [--rig]`: CPU ms/frame per stage (motor, physics, hair, skinning, mind...). Run it before and after anything that could cost frame time.
 - `python3 tools/dev.py viz` regenerates the visual (`out/eon_codegraph.html`). Republish it to the "Eon Code Atlas" artifact when the code has changed a lot.
 
 Raw commands, if needed:

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "raylib.h"
+#include <vector>
 
 #include "core/World.h"
 
@@ -27,7 +28,11 @@ public:
     float ambient = 0.10f;  // light with all lamps off (0..1)
 
 private:
-    Model cube_{};
+    struct Batch { Mesh mesh{}; };
+    static constexpr size_t kBoxesPerBatch = 2700;   // 24 verts each: under the 16-bit index limit
+    Batch MakeBatch();
+    std::vector<Batch> batches_;
+    Material material_{};
     Shader shader_{};
     int locLightPos_ = -1, locLightColor_ = -1, locLightCount_ = -1;
     int locAmbient_ = -1, locEmissive_ = -1, locViewPos_ = -1;

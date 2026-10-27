@@ -32,7 +32,7 @@ Put the Primrose files in `content/characters/jenny/source/` (git-ignored, they 
   T room temperature (zone / 8°C / 38°C), Y game time x60, P streamer mode, C collision capsules, K skeleton.
   Motor tests (what her mind will do later): middle-click the floor to walk there, J / U reach right / left hand to the cursor,
   G close/open the reaching hand, V lift it 25 cm, X relax both arms, arrows move her (relative to your camera),
-  Z cycle stance (Backspace = stand), hold Space to climb onto/off what's in front of her, O make her talk.
+  Z cycle stance (Backspace = stand), hold Space to climb onto/off what's in front of her, O make her talk, N show her mind (memory context), F9 write her memory (html/report/json).
   Render scripts: `--stance-at T S` (switch stance at time T), `--demo switch|lever|crate` (scripted hand use in Test Zone 01).
 - **Editor:** EDIT mode — LMB select, arrows/PgUp/PgDn move, R/F rotate, N new box, Ctrl+D duplicate, Del delete, Ctrl+S save. P toggles PLAY mode (physics on, grab/push/Space to test); stopping restores the layout.
 
@@ -62,4 +62,5 @@ Put the Primrose files in `content/characters/jenny/source/` (git-ignored, they 
 | `engine/character/LipSync` | text → visemes (or TTS phoneme timings, or live amplitude) on ARKit mouth morphs with coarticulation |
 | Sleep | lying still while tired → drowsy → asleep (eyes shut, slow breathing, recovers fatigue); wakes rested or when cold/hot/needing the toilet |
 | `engine/character/Wardrobe` | garments on her skeleton, layer rules (outer off first), bra/panty support for soft tissue, fit morphs, clo, streamer mode keeps underwear on |
-| Mind bridge + sensor firewall, OBS | step 5 |
+| `engine/mind` (memory graph) | sensor firewall (`Perception`: eyes from her head with occlusion + peripheral vision, hands, body feelings; opaque tracks only), `Learner` (her own names for things, on/near, weight, movable, glow; cause→effect from timing with observed/inferred/ambiguous provenance and evidence counts), `MemoryGraph` (traversal-based context within a token budget, questions → curiosity, communities, sleep consolidation, journaled persistence, HTML viewer). See Docs/Mind_Memory.md |
+| Mind bridge (LLM brain), OBS | next |

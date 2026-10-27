@@ -7,6 +7,9 @@
 #include "character/BodyState.h"
 #include "character/LipSync.h"
 #include "character/Motor.h"
+#include "mind/Learner.h"
+#include "mind/MemoryGraph.h"
+#include "mind/Perception.h"
 #include "character/Posture.h"
 #include "character/Wardrobe.h"
 #include "core/Circuit.h"
@@ -642,6 +645,115 @@ static void TestCarriesThings(const std::string& contentDir) {
     }
 }
 
+
+static void TestMemoryGraph() {
+    MemoryGraph g;
+    const uint32_t bump = g.AddNode(NodeKind::Thing, "small red bump", 0);
+    const uint32_t bulb = g.AddNode(NodeKind::Thing, "small cream block", 0);
+    const uint32_t table = g.AddNode(NodeKind::Thing, "big white slab", 0);
+    const uint32_t press = g.AddNode(NodeKind::Action, "push small red bump", 1);
+    const uint32_t lit = g.AddNode(NodeKind::Effect, "small cream block lights up", 1);
+    g.Evidence(press, bump, Rel::Targets, Source::Observed, true, 1);
+    g.Evidence(lit, bulb, Rel::Affects, Source::Observed, true, 1);
+    g.Evidence(bump, table, Rel::On, Source::Observed, true, 1);
+    g.Evidence(bulb, table, Rel::On, Source::Observed, true, 1);
+    g.Evidence(press, lit, Rel::Causes, Source::Inferred, true, 1);
+    g.Evidence(press, lit, Rel::Causes, Source::Inferred, true, 5);
+    g.Evidence(press, lit, Rel::Causes, Source::Inferred, false, 9);    // once it didn't work
+    const MemEdge* c = g.Edge(press, lit, Rel::Causes);
+    CHECK(c && c->support == 2 && c->trials == 3);
+    CHECK_NEAR(c->Confidence(), 3.0 / 5.0, 1e-5);
+    CHECK(g.Path(bump, bulb).size() == 3);                               // bump -> table -> bulb (or via the action)
+    const std::string ctx = g.Context({bump}, 10, 60);
+    CHECK(ctx.size() <= 60 * 4 + 8);
+    CHECK(ctx.find("small red bump") != std::string::npos);
+    CHECK(ctx.find("lights up") != std::string::npos);                  // one hop from the bump: what pushing it does
+
+    // competing explanations: two actions just before an effect
+    const uint32_t a2 = g.AddNode(NodeKind::Action, "grab grey stick", 20);
+    const uint32_t dark = g.AddNode(NodeKind::Effect, "small cream block goes dark", 20);
+    g.Evidence(press, dark, Rel::Causes, Source::Ambiguous, true, 20, 0.5f);
+    g.Evidence(a2, dark, Rel::Causes, Source::Ambiguous, true, 20, 0.5f);
+    CHECK(g.Edge(a2, dark, Rel::Causes)->src == Source::Ambiguous);
+    CHECK(!g.Questions(25).empty());                                     // which one did it?
+    for (int k = 0; k < 4; ++k) g.Evidence(a2, dark, Rel::Causes, Source::Ambiguous, false, 30 + k);   // grabbing never does it again
+    g.Consolidate(40, 8.f);
+    CHECK(g.Edge(a2, dark, Rel::Causes) == nullptr);                      // that guess got forgotten in sleep
+    CHECK(g.Edge(press, lit, Rel::Causes) != nullptr);
+    CHECK(g.Node(bump)->community == g.Node(bulb)->community);            // the table things belong together
+    CHECK(g.Report(40).find("What puzzles me") != std::string::npos);
+
+    // persistence: snapshot + journal of later changes
+    const std::string dir = std::string(EON_TEST_DATA) + "/../../build";
+    g.SetJournal(dir + "/mem_test.journal");
+    CHECK(g.Save(dir + "/mem_test.json"));
+    const uint32_t late = g.AddNode(NodeKind::Feeling, "cold", 50);
+    g.Evidence(press, lit, Rel::Causes, Source::Inferred, true, 51);
+    CHECK(g.FlushJournal());
+    MemoryGraph h;
+    h.SetJournal(dir + "/mem_test.journal");
+    CHECK(h.Load(dir + "/mem_test.json"));
+    CHECK(h.NodeCount() == g.NodeCount() && h.Find(NodeKind::Feeling, "cold") == late);
+    CHECK(h.Edge(press, lit, Rel::Causes) && h.Edge(press, lit, Rel::Causes)->support == 3);
+    CHECK(g.ExportHtml(dir + "/mem_test.html", 60));
+}
+
+static void TestJennyLearnsTheButton(const std::string& contentDir) {
+    World w;
+    CHECK(w.Load(contentDir + "/zones/test_zone_01.json"));
+    w.Advance(0.5);
+    TestJenny j;
+    CHECK(j.Init(w, {0.f, 0.f, 0.58f}, 3.14159265f));
+    Perception eyes;
+    Learner mind;
+    mind.SetBackstory({"my name is Jenny", "I woke up here and don't know this place"}, 0);
+    double t = 0;
+    Percept p;
+    auto live = [&](float seconds) {
+        for (float s = 0; s < seconds; s += 0.1f) {
+            j.Run(w, 0.1f);
+            t += 0.1;
+            eyes.Sense(w, j.motor, j.ch, nullptr, t, p);
+            mind.Observe(p);
+        }
+    };
+    live(1.0);
+    // she sees the bulb and the button without being told what they are
+    const int bulbE = FindByName(w, "BulbOnStand");
+    const Vec3 top = w.BodyPosition(w.MainBodyOf(FindByName(w, "BigButton"))) + Vec3{0, 0.025f, 0};
+    size_t things = 0;
+    for (const MemNode& n : mind.graph.Nodes()) things += n.kind == NodeKind::Thing;
+    CHECK(things >= 4);
+    for (const MemNode& n : mind.graph.Nodes()) CHECK(n.label.find("Bulb") == std::string::npos && n.label.find("Button") == std::string::npos);
+    (void)bulbE;
+    // press, release, press again
+    for (int k = 0; k < 2; ++k) {
+        auto& h = j.in.hands[1];
+        h.reach = true;
+        h.target = top + Vec3{0, -0.03f, 0};
+        h.effort = 0.3f;
+        live(2.0);
+        h.reach = false;
+        live(1.5);
+    }
+    // she now believes pushing that thing makes the other thing light up
+    const MemEdge* best = nullptr;
+    for (const MemEdge& e : mind.graph.Edges()) {
+        if (!e.alive || e.rel != Rel::Causes) continue;
+        const MemNode* eff = mind.graph.Node(e.to);
+        if (eff->label.find("lights up") != std::string::npos && (!best || e.support > best->support)) best = &e;
+    }
+    CHECK(best != nullptr);
+    if (best) {
+        CHECK(best->support >= 2);
+        CHECK(mind.graph.Node(best->from)->label.find("push") == 0 || mind.graph.Node(best->from)->label.find("press") == 0);
+        CHECK(best->Confidence() > 0.6f);
+    }
+    const std::string ctx = mind.Context(p, 250);
+    CHECK(ctx.size() < 250 * 4 + 300);
+    CHECK(ctx.find("lights up") != std::string::npos);
+}
+
 static Zone FloorZone(float boxHeight, float boxZ) {
     Zone z;
     z.name = "Bench";
@@ -865,6 +977,8 @@ int main(int argc, char** argv) {
     TestMotorPressesButton(content);
     TestMotorWalksAndStopsAtWall(content);
     TestMotorGripsAndLifts(content);
+    TestMemoryGraph();
+    TestJennyLearnsTheButton(content);
     TestFlipsWallSwitch(content);
     TestPullsLever(content);
     TestCarriesThings(content);

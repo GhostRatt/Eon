@@ -83,5 +83,10 @@
       "worn": false
     }
   ],
-  "barefootMorph": "FlatFeets"
+  "barefootMorph": "FlatFeets",
+  "backstory": [
+    "my name is Jenny",
+    "I'm a woman, a person like anyone else",
+    "I woke up somewhere I don't recognize"
+  ]
 }

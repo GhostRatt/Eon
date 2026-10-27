@@ -67,6 +67,7 @@ public:
     int HandBody(int i) const { return hand_[i]; }
     int HeldBody(int i) const { return held_[i]; }
     int TipBody(int i) const { return tip_[i]; }
+    bool Reaching(int i) const { return reaching_[i]; }
     float Lean() const { return lean_; }
     Stance CurrentStance() const { return stance_; }
     bool Lying() const { return stance_ == Stance::Prone || stance_ == Stance::LieBack || stance_ == Stance::LieLeft || stance_ == Stance::LieRight; }

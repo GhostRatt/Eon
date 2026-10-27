@@ -80,6 +80,13 @@ target_link_libraries(eon_character PUBLIC eon_core PRIVATE ufbx)
 find_package(Threads REQUIRED)
 target_link_libraries(eon_character PUBLIC Threads::Threads)
 
+# ---- Mind: sensor firewall, memory graph, learner (no rendering; the only door into Jenny's head) ----
+add_library(eon_mind STATIC
+    engine/mind/MemoryGraph.cpp
+    engine/mind/Perception.cpp
+    engine/mind/Learner.cpp)
+target_link_libraries(eon_mind PUBLIC eon_character)
+
 # ---- Apps ----
 if(EON_BUILD_APPS)
     set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -98,7 +105,7 @@ if(EON_BUILD_APPS)
     target_link_libraries(eon_render PUBLIC eon_core eon_character raylib)
 
     add_executable(eon_sim apps/sim/main.cpp)
-    target_link_libraries(eon_sim PRIVATE eon_render)
+    target_link_libraries(eon_sim PRIVATE eon_render eon_mind)
 
     add_executable(eon_editor apps/editor/main.cpp)
     target_link_libraries(eon_editor PRIVATE eon_render)
@@ -108,7 +115,7 @@ endif()
 if(EON_BUILD_TESTS)
     enable_testing()
     add_executable(eon_tests tests/test_main.cpp)
-    target_link_libraries(eon_tests PRIVATE eon_core eon_character)
+    target_link_libraries(eon_tests PRIVATE eon_core eon_character eon_mind)
     target_compile_definitions(eon_tests PRIVATE EON_TEST_DATA="${CMAKE_SOURCE_DIR}/tests/data")
     add_test(NAME eon_tests COMMAND eon_tests ${CMAKE_SOURCE_DIR}/content)
 endif()

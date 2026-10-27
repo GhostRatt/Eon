@@ -1,3 +1,4 @@
+#include <sstream>
 // eon_sim — runs Jenny's world: Waiting Area + Test Zones.
 // Operator view: your mouse acts as a stand-in hand (grab/carry, push) until Jenny exists (step 4).
 // Jenny never sees this HUD.
@@ -17,6 +18,8 @@
 #include "character/Character.h"
 #include "character/BodyState.h"
 #include "character/Dangles.h"
+#include "mind/Learner.h"
+#include "mind/Perception.h"
 #include "character/Face.h"
 #include "character/LipSync.h"
 #include "character/Motor.h"
@@ -54,6 +57,14 @@ struct Body {
     Motor motor;
     MotorIntent intent;
     LipSync lips;
+    // her mind's inputs and memory (everything goes through the sensor firewall)
+    Perception eyes;
+    Learner mind;
+    Percept percept;
+    double mindT = 0.0;
+    float mindAcc = 0.f, sleptGameMin = 0.f, journalAcc = 0.f;
+    bool showMind = false;
+    std::string memoryDir;
     std::string barefootMorph;
     bool hasWalkTarget = false;
     Vec3 walkTarget;
@@ -132,6 +143,13 @@ struct Body {
         if (!barefootMorph.empty()) { ch.SetMorph(barefootMorph, 1.f); ch.RefitFloor(); }
         motor.Init(ch, world);
         hair.Init(ch, cfg.value("dangles", std::vector<std::string>{"hair_", "earring_"}));
+        // memory: picks up where she left off if a memory folder is given
+        if (!memoryDir.empty()) {
+            fs::create_directories(memoryDir);
+            mind.graph.SetJournal(memoryDir + "/jenny_memory.journal");
+            mind.graph.Load(memoryDir + "/jenny_memory.json");
+        }
+        mind.SetBackstory(cfg.value("backstory", std::vector<std::string>{}), 0.0);
         loaded = true;
         if (info.empty()) info = fs::path(fbx).filename().string();
         info += TextFormat("  |  %d bones  %d verts  %d tris  %d tex  %d hair chains  %d garments", (int)asset.bones.size(),
@@ -210,6 +228,33 @@ struct Body {
         for (size_t m = 0; m < vis.size(); ++m) gfx.SetMeshVisible(m, vis[m]);
         gfx.wetness = std::max(state.wetness, 0.f);
         gfx.Upload(ch);
+
+        // mind: senses at 10 Hz while awake; asleep, memory consolidates (every game hour slept)
+        mindT += dt;
+        mindAcc += dt;
+        if (mindAcc >= 0.1f) {
+            mindAcc = 0.f;
+            if (!state.asleep) {
+                eyes.Sense(world, motor, ch, &state, mindT, percept);
+                mind.Observe(percept);
+            }
+        }
+        if (state.asleep) {
+            sleptGameMin += dt * state.gameMinutesPerSecond;
+            if (sleptGameMin >= 60.f) { mind.Sleep(mindT, sleptGameMin / 60.f); sleptGameMin = 0.f; }
+        }
+        journalAcc += dt;
+        if (journalAcc > 5.f) { journalAcc = 0.f; mind.graph.FlushJournal(); }
+    }
+
+    void SaveMind(const std::string& dir) {
+        namespace fs = std::filesystem;
+        fs::create_directories(dir);
+        if (!memoryDir.empty()) mind.graph.Save(memoryDir + "/jenny_memory.json");
+        else mind.graph.Save(dir + "/jenny_memory.json");
+        mind.graph.ExportHtml(dir + "/jenny_memory.html", mindT);
+        std::ofstream(dir + "/jenny_memory_report.md") << mind.graph.Report(mindT);
+        std::ofstream(dir + "/jenny_context.txt") << mind.Context(percept, 300);
     }
 
     void DrawDebug(const Camera3D& cam) const {
@@ -256,6 +301,11 @@ static void RunDemo(const std::string& d, float t, World& w, Body& b) {
         const float u = std::clamp((t - 1.5f) / 1.5f, 0.f, 1.f);
         const float a = a0 + (0.62f - a0) * u;
         R.target = t < 1.5f ? Vec3{-2.27f, 1.066f, 0.8f} : pivot + Vec3{r * std::cos(a), r * std::sin(a), 0.f};
+    } else if (d == "learn") {   // stand at (0, 0.58) facing -Z: push the red button on the table twice, letting go in between
+        const bool on = (t > 1.0f && t < 3.0f) || (t > 4.5f && t < 6.5f);
+        R.reach = on;
+        R.effort = 0.3f;
+        R.target = {0.f, 0.76f, 0.15f};
     } else if (d == "crate") {   // stand at (-1.2, -1.18) facing -Z; crouch, take the crate by its sides, stand, walk
         const Vec3 c0{-1.2f, 0.15f, -1.6f};
         in.stance = t < 3.0f ? Stance::Crouch : Stance::Stand;
@@ -288,7 +338,9 @@ int main(int argc, char** argv) {
     int stanceArg = -1;
     std::vector<std::pair<float, int>> stanceSeq;   // --stance-at T S: switch to stance S at settle time T
     bool climbArg = false;
-    std::string demoArg;   // --demo switch|lever|crate|battery: scripted hand use (same moves the tests check)
+    std::string demoArg;
+    std::string memoryArg, mindOut;
+    bool showMindArg = false;   // --memory DIR (persistent memory), --mind-out DIR (write report/html after settle)   // --demo switch|lever|crate|battery: scripted hand use (same moves the tests check)
     std::string sayArg;
     float spawn[3] = {0, 0, 0}, reachR[3] = {0, 0, 0}, walkTo[2] = {0, 0};
     bool powerAll = false, lightsOff = false, customCam = false;
@@ -316,6 +368,9 @@ int main(int argc, char** argv) {
         else if (arg == "--say" && a + 1 < argc) sayArg = argv[++a];
         else if (arg == "--climb") climbArg = true;
         else if (arg == "--demo" && a + 1 < argc) demoArg = argv[++a];
+        else if (arg == "--memory" && a + 1 < argc) memoryArg = argv[++a];
+        else if (arg == "--mind-out" && a + 1 < argc) mindOut = argv[++a];
+        else if (arg == "--show-mind") showMindArg = true;
         else if (arg == "--cam" && a + 6 < argc) { for (float& c : cam) c = std::stof(argv[++a]); customCam = true; }
         else zonePath = arg;
     }
@@ -341,6 +396,8 @@ int main(int argc, char** argv) {
             if (e.type == "switch") world.DebugActuate(e.id, false);
     }
     auto body = std::make_unique<Body>();
+    body->memoryDir = memoryArg;
+    body->showMind = showMindArg;
     body->Load(content, fbxOverride, world);
     body->posture.motion = static_cast<TestMotion>(std::clamp(motionArg, 0, 6));
     body->showCapsules = capsArg;
@@ -377,6 +434,7 @@ int main(int argc, char** argv) {
             body->Update(1 / 60.f, ambient(), world);
         }
     }
+    if (!mindOut.empty()) body->SaveMind(mindOut);
 
     FlyCamera fly;
     fly.Init({cam[0], cam[1], cam[2]}, {cam[3], cam[4], cam[5]});
@@ -452,6 +510,8 @@ int main(int argc, char** argv) {
         }
         body->intent.climb = IsKeyDown(KEY_SPACE) || climbArg;
         if (IsKeyPressed(KEY_O)) body->lips.Say("Hello? Is anyone there? I don't know how I got here.");
+        if (IsKeyPressed(KEY_N)) body->showMind = !body->showMind;
+        if (IsKeyPressed(KEY_F9)) { body->SaveMind(memoryArg.empty() ? "mind_out" : memoryArg); status = "Jenny's memory written (html, report, context)"; }
         if (IsKeyPressed(KEY_V)) for (auto& h : body->intent.hands) if (h.reach) h.target = h.target + Vec3{0, 0.25f, 0};   // lift
 
         body->PrePhysics(world, dt);
@@ -494,10 +554,20 @@ int main(int argc, char** argv) {
                                     mf.climbing ? " CLIMB" : "", mf.atEdge ? " EDGE" : "", mf.speed, st.asleep ? "  ASLEEP" : ""), x, 136, 14, YELLOW);
                 DrawText(st.Describe(ambient()).c_str(), 16, GetScreenHeight() - 54, 16, PINK);
             }
+            if (body->showMind) {
+                // what her mind would be handed right now (memory context from the graph)
+                const std::string ctx = body->mind.Context(body->percept, 300);
+                DrawRectangle(8, 192, 760, 360, Fade(BLACK, 0.7f));
+                DrawText(TextFormat("MIND  %d memories  %d links  (N hide, F9 save html/report)", (int)body->mind.graph.NodeCount(),
+                                    (int)body->mind.graph.EdgeCount()), 16, 198, 16, ORANGE);
+                int y = 220;
+                std::istringstream ls(ctx);
+                for (std::string line; std::getline(ls, line) && y < 540; y += 16) DrawText(line.substr(0, 110).c_str(), 16, y, 14, RAYWHITE);
+            }
             DrawText("OPERATOR VIEW (Jenny never sees this)", 16, 14, 18, ORANGE);
             DrawText(TextFormat("%s   t = %.1fs   %d fps", world.GetZone().name.c_str(), world.SimTime(), GetFPS()), 16, 38, 18, RAYWHITE);
             DrawText("1 Waiting Area  2 Test Zone 01  R reset  H hud", 16, 62, 16, LIGHTGRAY);
-            DrawText("RMB look WASD/QE fly LMB grab F push | Jenny: MMB/arrows move Z stance Space climb J/U reach G grip V lift X drop O talk", 16, 82, 16, LIGHTGRAY);
+            DrawText("RMB look WASD/QE fly LMB grab F push | Jenny: MMB/arrows move Z stance Space climb J/U reach G grip V lift X drop O talk N mind", 16, 82, 16, LIGHTGRAY);
             DrawText(status.c_str(), 16, 106, 16, SKYBLUE);
 
             if (hasHit) {
@@ -519,6 +589,7 @@ int main(int argc, char** argv) {
         }
     }
 
+    if (!memoryArg.empty()) body->SaveMind(memoryArg);
     renderer.Unload();
     CloseWindow();
     return 0;

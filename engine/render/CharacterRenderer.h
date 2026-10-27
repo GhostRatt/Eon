@@ -17,6 +17,7 @@ namespace eon {
 struct MaterialOverride {
     std::string baseColor, opacity;   // file names (searched in texture dirs)
     bool hidden = false;
+    bool skin = false;                // gets sweat/wetness sheen
     bool hasColor = false;
     Vec3 color{1, 1, 1};
 };
@@ -35,6 +36,7 @@ public:
 
     // Optional: per-mesh visibility (clothing layers, censoring)
     void SetMeshVisible(size_t assetMesh, bool visible);
+    float wetness = 0.f;   // 0..1 from the body sim
     size_t LoadedTextures() const { return loadedTextures_; }
     std::vector<std::string> MissingTextures() const { return missing_; }
 
@@ -50,6 +52,7 @@ private:
         bool hasAlbedo = false;
         Color tint{230, 190, 170, 255};
         bool hidden = false;
+        bool skin = false;
     };
 
     Texture2D LoadTex(const std::string& path, const std::string& fbxDir, const std::vector<std::string>& dirs,
@@ -63,6 +66,7 @@ private:
     Shader shader_{};
     Material material_{};
     int locLightPos_ = -1, locLightColor_ = -1, locLightCount_ = -1, locAmbient_ = -1, locUseTex_ = -1;
+    int locWet_ = -1, locIsSkin_ = -1, locViewPos_ = -1;
     size_t loadedTextures_ = 0;
     std::vector<std::string> missing_;
     bool ready_ = false;

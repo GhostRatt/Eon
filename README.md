@@ -28,7 +28,8 @@ Put the Primrose files in `content/characters/jenny/source/` (git-ignored, they 
 
 ### Controls
 - **Sim:** RMB look, WASD/QE fly, LMB grab and carry (wheel = reach), F push with ~4 N, 1/2 switch zones, R reset, H HUD.
-  Jenny test keys: M cycle test motion (idle, bounce, walk in place, hands on chest/hips, arms crossed, turn), B bra support, C collision capsules, K skeleton.
+  Jenny test keys: M cycle test motion (idle, bounce, walk in place, hands on chest/hips, arms crossed, turn), 3-8 put on / take off garments,
+  T room temperature (zone / 8°C / 38°C), Y game time x60, P streamer mode, C collision capsules, K skeleton.
 - **Editor:** EDIT mode — LMB select, arrows/PgUp/PgDn move, R/F rotate, N new box, Ctrl+D duplicate, Del delete, Ctrl+S save. P toggles PLAY mode (physics on, grab/push/Space to test); stopping restores the layout.
 
 ## Status
@@ -42,5 +43,9 @@ Put the Primrose files in `content/characters/jenny/source/` (git-ignored, they 
 | Editor tools | step 3 |
 | `engine/character` | done (verified on a stand-in rig) — FBX import via ufbx (skin weights, morphs, materials, any unit/axis → meters Y-up), auto rig mapping (Mannequin/ARP/Mixamo/Blender names), auto-facing, two-bone IK, skin-fitted body capsules, limb collision, breast/glute spring-mass soft tissue with support, multithreaded CPU skinning |
 | `engine/render/CharacterRenderer` | done — textured (TGA/PNG/JPG), lamp-lit skin shading, 16-bit chunking for big meshes |
-| Jenny's real model | waiting for the Primrose FBX files (see below) |
+| Jenny (Primrose) | loaded from `E:\Eon-main\Assets for Claude` via `character.json`: textures, hair opacity, 77 morphs |
+| `engine/character/Face` | blinking (random, tired = slow/heavy lids), eye saccades, mood/cold/heat expressions on ARKit morphs |
+| `engine/character/Dangles` | hair + earring bone chains (33 chains / 129 bones): gravity, swing, styled shape, head/torso collision |
+| `engine/character/BodyState` | needs, core temp, sweat → skin sheen, shiver tremor, breathing rate/depth, heart rate, mood, body-sense text |
+| `engine/character/Wardrobe` | garments on her skeleton, layer rules (outer off first), bra/panty support for soft tissue, fit morphs, clo, streamer mode keeps underwear on |
 | Mind bridge + sensor firewall, OBS | step 5 |

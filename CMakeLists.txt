@@ -68,7 +68,11 @@ endif()
 add_library(eon_character STATIC
     engine/character/FbxImport.cpp
     engine/character/Character.cpp
-    engine/character/Posture.cpp)
+    engine/character/Posture.cpp
+    engine/character/Face.cpp
+    engine/character/Dangles.cpp
+    engine/character/BodyState.cpp
+    engine/character/Wardrobe.cpp)
 target_include_directories(eon_character PUBLIC engine)
 target_link_libraries(eon_character PUBLIC eon_core PRIVATE ufbx)
 find_package(Threads REQUIRED)

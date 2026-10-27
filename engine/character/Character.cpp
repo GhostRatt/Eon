@@ -97,7 +97,9 @@ bool Character::Init(const CharacterAsset* asset) {
 
     // Height and facing from the bind pose
     float lo = 1e9f, hi = -1e9f;
-    for (const SkinMesh& m : asset_->meshes) for (const Vec3& p : m.pos) { lo = std::min(lo, p.y); hi = std::max(hi, p.y); }
+    for (const SkinMesh& m : asset_->meshes)
+        if (m.garment < 0) for (const Vec3& p : m.pos) { lo = std::min(lo, p.y); hi = std::max(hi, p.y); }
+    if (lo > hi) { lo = 0.f; hi = 1.7f; }
     height_ = hi - lo;
 
     placement = {};
@@ -224,10 +226,12 @@ void Character::FitCapsules() {
 
         // gather skin strongly owned by this bone
         std::vector<Vec3> pts;
-        for (const SkinMesh& m : asset_->meshes)
+        for (const SkinMesh& m : asset_->meshes) {
+            if (m.garment >= 0) continue;   // fit to skin, not clothes
             for (size_t v = 0; v < m.pos.size(); ++v)
                 for (int k = 0; k < 4; ++k)
                     if (m.joints[v][k] == bone && m.weights[v][k] > 0.5f) { pts.push_back(m.pos[v]); break; }
+        }
 
         if (child < 0 && !pts.empty()) {   // sphere-ish: from bone toward the tissue centroid
             Vec3 cen{};
@@ -285,10 +289,12 @@ void Character::SetupSoftBones() {
         // direction/length from the bone to the centroid of the skin it owns
         Vec3 cen{};
         int n = 0;
-        for (const SkinMesh& m : asset_->meshes)
+        for (const SkinMesh& m : asset_->meshes) {
+            if (m.garment >= 0) continue;
             for (size_t v = 0; v < m.pos.size(); ++v)
                 for (int k = 0; k < 4; ++k)
                     if (m.joints[v][k] == bone && m.weights[v][k] > 0.3f) { cen += m.pos[v]; ++n; break; }
+        }
         Vec3 d = n > 0 ? cen * (1.f / n) - bw[bone].t : Vec3{0, 0, 0.06f};
         if (d.Length() < 0.01f) d = d.Normalized({0, 0, 1}) * 0.06f;
         s.length = std::clamp(d.Length() * 1.3f, 0.03f, 0.15f);

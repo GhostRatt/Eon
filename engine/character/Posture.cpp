@@ -61,12 +61,23 @@ void ApplyPosture(Character& ch, const PostureParams& p) {
     }
 
     // Breathing: small chest rise
-    const float breath = 0.5f + 0.5f * std::sin(t * 2.f * kPi * p.breathRate);
+    const float phase = p.breathPhase >= 0.f ? p.breathPhase : t * p.breathRate;
+    const float breath = (0.5f + 0.5f * std::sin(phase * 2.f * kPi)) * (0.4f + 1.2f * p.breathDepth);
     const int top = r.SpineTop();
     Vec3 fwd = ch.placement.r.Rotate({0, 0, 1});
     Vec3 left{1, 0, 0};
     if (r.thigh[0] >= 0 && r.thigh[1] >= 0) left = (ch.BonePos(r.thigh[0]) - ch.BonePos(r.thigh[1])).Normalized({1, 0, 0});
     if (top >= 0) ch.RotateBoneWorld(top, Quat::AxisAngle(left, -0.02f * breath));
+    // Shivering: fast small tremor through the trunk and shoulders, arms pulled in a little
+    if (p.shiver > 0.01f) {
+        const float tr = p.shiver * 0.012f;
+        const float n1 = std::sin(t * 2.f * kPi * 9.3f) + 0.6f * std::sin(t * 2.f * kPi * 13.7f + 1.3f);
+        const float n2 = std::sin(t * 2.f * kPi * 11.1f + 0.7f);
+        if (r.spine[0] >= 0) ch.RotateBoneWorld(r.spine[0], Quat::AxisAngle(fwd, tr * n1));
+        if (top >= 0) ch.RotateBoneWorld(top, Quat::AxisAngle(left, tr * n2));
+        for (int i = 0; i < 2; ++i)
+            if (r.clavicle[i] >= 0) ch.RotateBoneWorld(r.clavicle[i], Quat::AxisAngle(fwd, (i == 0 ? 1.f : -1.f) * (0.08f * p.shiver + tr * n2)));
+    }
 
     // Legs stay planted (or step) with IK
     for (int i = 0; i < 2; ++i) {

@@ -26,6 +26,7 @@ struct Morph {
 struct SkinMesh {
     std::string name;
     int material = -1;
+    int garment = -1;                              // -1 = body, else index into the wardrobe
     std::vector<Vec3> pos, nrm;
     std::vector<float> uv;                         // 2 per vertex
     std::vector<std::array<uint16_t, 4>> joints;   // bone indices
@@ -60,5 +61,10 @@ struct ImportOptions {
 };
 
 bool ImportFbx(const std::string& path, CharacterAsset& out, const ImportOptions& opt = {}, std::string* error = nullptr);
+
+// Loads a garment rigged to the same skeleton and appends its meshes to `body`, remapping bones by name
+// (bones missing from the body fall back to their nearest ancestor that exists). Returns appended mesh indices.
+bool AppendGarment(CharacterAsset& body, const std::string& path, int garmentId, std::vector<int>& meshes,
+                   std::string* error = nullptr);
 
 } // namespace eon

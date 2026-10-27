@@ -4,7 +4,9 @@
 #include <string>
 
 #include "character/Character.h"
+#include "character/BodyState.h"
 #include "character/Posture.h"
+#include "character/Wardrobe.h"
 #include "core/Circuit.h"
 #include "core/World.h"
 #include "core/Physics.h"
@@ -355,6 +357,50 @@ static void TestCharacterImport() {
     CHECK(Distance(c2.BonePos(r.breast[0]), rest) < 0.006f);   // settled (just gravity sag)
 }
 
+static void TestBodyState() {
+    BodyState b;
+    b.gameMinutesPerSecond = 60.f;   // 1 s = 1 game hour
+    BodyInputs hot; hot.ambientC = 40.f; hot.exertion = 0.6f;
+    for (int i = 0; i < 4 * 60; ++i) b.Step(hot, 1 / 60.f);
+    CHECK(b.sweat > 0.3f);
+    CHECK(b.coreC > 37.3f);
+    CHECK(b.breathRate > 0.4f);
+    CHECK(b.Get(Need::Thirst) > 50.f);
+
+    BodyState c;
+    c.gameMinutesPerSecond = 60.f;
+    BodyInputs cold; cold.ambientC = 2.f;
+    for (int i = 0; i < 4 * 60; ++i) c.Step(cold, 1 / 60.f);
+    CHECK(c.shiver > 0.3f);
+    CHECK(c.Describe(2.f).find("shivering") != std::string::npos);
+
+    BodyState d;   // clothing keeps her warmer in the cold
+    d.gameMinutesPerSecond = 60.f;
+    BodyInputs dressed = cold; dressed.clothingClo = 1.5f;
+    for (int i = 0; i < 4 * 60; ++i) d.Step(dressed, 1 / 60.f);
+    CHECK(d.coreC > c.coreC + 0.3f);
+}
+
+static void TestWardrobeRules() {
+    Wardrobe w;
+    Garment bra; bra.name = "Bra"; bra.layer = Layer::Underwear; bra.covers = {"chest"}; bra.support[2] = 0.7f;
+    Garment panties; panties.name = "Panties"; panties.layer = Layer::Underwear; panties.covers = {"groin"};
+    Garment shirt; shirt.name = "Shirt"; shirt.layer = Layer::Mid; shirt.covers = {"chest", "arms"}; shirt.clo = 0.2f;
+    w.garments = {bra, panties, shirt};
+    CHECK(w.Wear(0) && w.Wear(1) && w.Wear(2));
+    CHECK(!w.CanRemove(0));            // shirt is over the bra
+    CHECK(w.CanRemove(1));             // nothing over the panties
+    CHECK(w.Remove(2));                // shirt off first
+    CHECK(w.Remove(0));                // now the bra
+    CHECK_NEAR(w.Support(2), 0.0, 1e-6);
+    CHECK(w.Wear(0));
+    w.streamerMode = true;
+    CHECK(!w.CanRemove(0) && !w.CanRemove(1));   // last layer stays on while streaming
+    CHECK(w.Wear(2) && w.Remove(2));             // outer layers still come off
+    CHECK(w.Covers("chest") && w.Covers("groin"));
+    CHECK(!w.CanWear(0));                        // already on
+}
+
 int main(int argc, char** argv) {
     const std::string content = argc > 1 ? argv[1] : EON_CONTENT_DIR;
     TestOpenBattery();
@@ -373,6 +419,8 @@ int main(int argc, char** argv) {
     TestClipPullOffAndReattach();
     TestDirectTouchLightsBulb();
     TestCharacterImport();
+    TestBodyState();
+    TestWardrobeRules();
     std::printf("%d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
 }

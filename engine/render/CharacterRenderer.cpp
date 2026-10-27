@@ -42,6 +42,9 @@ uniform int lightCount;
 uniform vec3 lightPos[8];
 uniform vec3 lightColor[8];
 uniform float ambient;
+uniform float wetness;      // skin only: sweat/water sheen
+uniform int isSkin;
+uniform vec3 viewPos;
 out vec4 finalColor;
 void main() {
     vec4 tex = useTex == 1 ? texture(texture0, fragUV) : vec4(1.0);
@@ -50,6 +53,12 @@ void main() {
     if (!gl_FrontFacing) n = -n;
     vec3 base = pow(tex.rgb * colDiffuse.rgb, vec3(2.2));
     vec3 light = vec3(ambient) * (0.7 + 0.3 * n.y);
+    vec3 spec = vec3(0.0);
+    vec3 V = normalize(viewPos - fragPos);
+    float wet = isSkin == 1 ? wetness : 0.0;
+    float shininess = mix(18.0, 140.0, wet);
+    float specAmt = isSkin == 1 ? mix(0.035, 0.6, wet) : 0.02;
+    if (isSkin == 1) base *= mix(1.0, 0.85, wet);   // wet skin reads slightly darker
     for (int i = 0; i < lightCount; ++i) {
         vec3 L = lightPos[i] - fragPos;
         float d = length(L);
@@ -58,8 +67,10 @@ void main() {
         float ndl = dot(n, L);
         float wrap = max((ndl + 0.3) / 1.3, 0.0);   // cheap skin wrap lighting
         light += lightColor[i] * (wrap + 0.08) * att;
+        vec3 H = normalize(L + V);
+        spec += lightColor[i] * pow(max(dot(n, H), 0.0), shininess) * specAmt * att * step(0.0, ndl);
     }
-    vec3 c = base * light;
+    vec3 c = base * light + spec;
     c = c / (1.0 + c);
     finalColor = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
 }
@@ -133,6 +144,9 @@ bool CharacterRenderer::Init(const Character& ch, const std::vector<std::string>
     locLightCount_ = GetShaderLocation(shader_, "lightCount");
     locAmbient_ = GetShaderLocation(shader_, "ambient");
     locUseTex_ = GetShaderLocation(shader_, "useTex");
+    locWet_ = GetShaderLocation(shader_, "wetness");
+    locIsSkin_ = GetShaderLocation(shader_, "isSkin");
+    locViewPos_ = GetShaderLocation(shader_, "viewPos");
     material_ = LoadMaterialDefault();
     material_.shader = shader_;
 
@@ -150,6 +164,7 @@ bool CharacterRenderer::Init(const Character& ch, const std::vector<std::string>
         auto ov = overrides.find(stripSuffix(mi.name));
         const MaterialOverride* o = ov != overrides.end() ? &ov->second : nullptr;
         mats_[i].hidden = o && o->hidden;
+        mats_[i].skin = o && o->skin;
         if (mats_[i].hidden) continue;
         const std::string baseTex = o && !o->baseColor.empty() ? o->baseColor : mi.baseColorTex;
         mats_[i].albedo = LoadTex(baseTex, fbxDir, textureDirs, o ? o->opacity : std::string());
@@ -258,6 +273,8 @@ void CharacterRenderer::Draw(const RenderFrame& lighting, const Camera3D& cam, f
         SetShaderValueV(shader_, locLightColor_, lc.data(), SHADER_UNIFORM_VEC3, count);
     }
     SetShaderValue(shader_, locAmbient_, &ambient, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(shader_, locWet_, &wetness, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(shader_, locViewPos_, &cam.position, SHADER_UNIFORM_VEC3);
 
     BeginMode3D(cam);
     rlDisableBackfaceCulling();   // thin clothing and hair are often single-sided
@@ -274,6 +291,8 @@ void CharacterRenderer::Draw(const RenderFrame& lighting, const Camera3D& cam, f
         }
         if (!useTex) material_.maps[MATERIAL_MAP_DIFFUSE].texture = Texture2D{rlGetTextureIdDefault(), 1, 1, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
         SetShaderValue(shader_, locUseTex_, &useTex, SHADER_UNIFORM_INT);
+        const int skin = c.material >= 0 && c.material < (int)mats_.size() && mats_[c.material].skin ? 1 : 0;
+        SetShaderValue(shader_, locIsSkin_, &skin, SHADER_UNIFORM_INT);
         DrawMesh(c.mesh, material_, MatrixIdentity());
     }
     rlEnableBackfaceCulling();

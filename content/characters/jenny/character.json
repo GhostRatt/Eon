@@ -6,12 +6,81 @@
     "source/Textures"
   ],
   "materials": {
-    "Primrose_Hair": { "baseColor": "Primrose_Hair_basecolor.tga", "opacity": "Primrose_Hair_opacity.tga" },
-    "Primrose_Pubes": { "baseColor": "Primrose_Hair_basecolor.tga", "opacity": "Primrose_Hair_opacity.tga", "color": [0.35, 0.25, 0.2] },
-    "Primrose_Eyes_Cornea": { "hidden": true },
-    "Primrose_Eyeshadow": { "hidden": true }
+    "Primrose_Hair": {
+      "baseColor": "Primrose_Hair_basecolor.tga",
+      "opacity": "Primrose_Hair_opacity.tga"
+    },
+    "Primrose_Pubes": {
+      "baseColor": "Primrose_Hair_basecolor.tga",
+      "opacity": "Primrose_Hair_opacity.tga",
+      "color": [
+        0.35,
+        0.25,
+        0.2
+      ]
+    },
+    "Primrose_Eyes_Cornea": {
+      "hidden": true
+    },
+    "Primrose_Eyeshadow": {
+      "hidden": true
+    },
+    "Primrose_Body": {
+      "skin": true
+    },
+    "Primrose_Head": {
+      "skin": true
+    },
+    "Lingerie": {
+      "baseColor": "Primrose_Lingerie_BaseColor.tga",
+      "opacity": "Primrose_Lingerie_Opacity_NoTransparentStocking.tga"
+    }
   },
-  "spawn": [0.0, 0.0, 0.3],
+  "spawn": [
+    0.0,
+    0.0,
+    0.3
+  ],
   "yaw": 0,
-  "targetHeight": 0
+  "targetHeight": 0,
+  "dangles": [
+    "hair_",
+    "earring_"
+  ],
+  "garments": [
+    {
+      "name": "Bra",
+      "fbx": "../../../../Assets for Claude/RyanReos_PrimroseDeluxe_FullArchive/RyanReos_Primrose_Deluxe/FBX/Modular/Primrose_Lingerie_Bra.fbx",
+      "layer": "underwear",
+      "covers": [
+        "chest"
+      ],
+      "bodyMorphs": [
+        "Lingerie_Bra"
+      ],
+      "support": {
+        "breast": 0.7
+      },
+      "clo": 0.03,
+      "worn": false
+    },
+    {
+      "name": "Panties",
+      "fbx": "../../../../Assets for Claude/RyanReos_PrimroseDeluxe_FullArchive/RyanReos_Primrose_Deluxe/FBX/Modular/Primrose_Lingerie_Panties.fbx",
+      "layer": "underwear",
+      "covers": [
+        "groin",
+        "hips"
+      ],
+      "bodyMorphs": [
+        "Lingerie_Panties",
+        "Panties"
+      ],
+      "support": {
+        "glute": 0.3
+      },
+      "clo": 0.02,
+      "worn": false
+    }
+  ]
 }

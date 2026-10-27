@@ -342,4 +342,27 @@ bool ImportFbx(const std::string& path, CharacterAsset& out, const ImportOptions
     return true;
 }
 
+bool AppendGarment(CharacterAsset& body, const std::string& path, int garmentId, std::vector<int>& meshes, std::string* error) {
+    CharacterAsset g;
+    ImportOptions opt;
+    if (!ImportFbx(path, g, opt, error)) return false;
+
+    std::vector<uint16_t> remap(g.bones.size(), 0);
+    for (size_t i = 0; i < g.bones.size(); ++i) {
+        int b = -1;
+        for (int cur = static_cast<int>(i); cur >= 0 && b < 0; cur = g.bones[cur].parent) b = body.FindBone(g.bones[cur].name);
+        remap[i] = static_cast<uint16_t>(std::max(b, 0));
+    }
+    const int matBase = static_cast<int>(body.materials.size());
+    for (MaterialInfo& m : g.materials) body.materials.push_back(m);
+    for (SkinMesh& m : g.meshes) {
+        for (auto& j : m.joints) for (uint16_t& x : j) x = remap[x];
+        if (m.material >= 0) m.material += matBase;
+        m.garment = garmentId;
+        meshes.push_back(static_cast<int>(body.meshes.size()));
+        body.meshes.push_back(std::move(m));
+    }
+    return true;
+}
+
 } // namespace eon

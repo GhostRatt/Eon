@@ -1,3 +1,4 @@
+#include <filesystem>
 #include <chrono>
 #include <algorithm>
 #include <cmath>
@@ -154,6 +155,7 @@ static void TestZoneRoundTrip(const std::string& contentDir) {
         if (!ok) continue;
         Zone copy;
         CHECK(ZoneFromJson(ZoneToJson(w.GetZone()), copy));
+        ExpandPrefabs(copy, contentDir);   // objects are saved as one entry and re-made on load
         CHECK(copy.entities.size() == w.GetZone().entities.size());
         CHECK(copy.links.size() == w.GetZone().links.size());
     }
@@ -569,6 +571,153 @@ static void TestWaitingAreaNeeds(const std::string& contentDir) {
     bool stream = false;
     for (const RenderPiece& rp : f.pieces) stream |= rp.entity >= 2000000;
     CHECK(stream);                                       // the shower is running (visible water)
+}
+
+
+static int IdNamed(const World& w, const std::string& n) {
+    for (const Entity& e : w.GetZone().entities) if (e.name == n) return e.id;
+    return 0;
+}
+
+// Object library: prefabs from content/objects placed in a zone, rotated, scripted, saved and re-made.
+static void TestPrefabs(const std::string& contentDir) {
+    Zone z;
+    z.name = "Shop";
+    z.ambientC = 18.f;
+    Entity vend = Ent(5, "Vend", "prefab", {0, 0, -2}, {0.1f, 0.1f, 0.1f}, 0, {{"prefab", "vending_machine"}, {"set", {{"Button.stock", 2}}}});
+    Entity heat = Ent(6, "Heat", "prefab", {2, 0, 0}, {0.1f, 0.1f, 0.1f}, 0, {{"prefab", "thermostat_heater"}});
+    heat.rotDeg = {0, 90, 0};
+    z.entities = {Ent(1, "Floor", "static", {0, -0.05f, 0}, {8, 0.1f, 8}), vend, heat,
+                  Ent(7, "Ghost", "prefab", {-2, 0, 0}, {0.1f, 0.1f, 0.1f}, 0, {{"prefab", "no_such_thing"}})};
+    World w;
+    w.SetContentRoot(contentDir);
+    w.SetZone(z);
+    const int button = IdNamed(w, "Vend.Button"), probe = IdNamed(w, "Heat.Probe"), heater = IdNamed(w, "Heat.Heater");
+    CHECK(button == 5000 + 6 && probe > 0 && heater > 0);
+    CHECK(w.ScriptCount() >= 2);
+    // rotated 90° about y: the probe that sat +0.3 in z now sits +0.3 in x of the instance
+    const Entity* pe = w.GetZone().Find(probe);
+    CHECK(pe && std::fabs(pe->pos.x - 2.3f) < 0.01f && std::fabs(pe->pos.z) < 0.01f);
+    // the "set" override and "$Part" refs reached the button's script params
+    const Entity* be = w.GetZone().Find(button);
+    CHECK(be && be->params.value("stock", 0) == 2 && be->params.value("chute", std::string()) == "Vend.Chute");
+    bool missing = false;
+    for (const std::string& l : w.ScriptLog()) missing |= l.find("no_such_thing") != std::string::npos;
+    CHECK(missing);
+    // it works: the thermostat's internal wiring heats; the machine vends its two apples
+    bool heating = false;
+    for (int k = 0; k < 20; ++k) { w.Advance(0.1); heating |= w.PartOf(heater)->power > 10; }
+    CHECK(heating);
+    for (int k = 0; k < 3; ++k) { w.DebugActuate(button, true); w.Advance(0.3); w.DebugActuate(button, false); w.Advance(1.0); }
+    int apples = 0;
+    for (const Entity& e : w.GetZone().entities) apples += e.type == "food";
+    CHECK(apples == 2);
+    // saving keeps only the instances (parts and inner wires come from the object file) and loads back the same
+    Zone clean = z;
+    World w2;
+    w2.SetContentRoot(contentDir);
+    w2.SetZone(clean);
+    const nlohmann::json j = ZoneToJson(w2.GetZone());
+    bool partSaved = false;
+    for (const auto& je : j["entities"]) partSaved |= je["name"].get<std::string>().find('.') != std::string::npos;
+    CHECK(!partSaved && j["links"].empty());
+    Zone back;
+    CHECK(ZoneFromJson(j, back));
+    World w3;
+    w3.SetContentRoot(contentDir);
+    w3.SetZone(back);
+    CHECK(w3.GetZone().entities.size() == w2.GetZone().entities.size() && w3.GetZone().links.size() == w2.GetZone().links.size());
+    // make a new object out of placed parts, then use it
+    const std::string tmp = std::filesystem::temp_directory_path().string() + "/eon_prefab_test";
+    std::filesystem::create_directories(tmp + "/scripts");
+    std::filesystem::copy_file(contentDir + "/scripts/timer_light.lua", tmp + "/scripts/timer_light.lua", std::filesystem::copy_options::overwrite_existing);
+    std::vector<Entity> parts = {
+        Ent(20, "Bat", "battery", {1, 0.1f, 1}, {0.06f, 0.15f, 0.1f}, 0, {{"voltage", 12.0}, {"internalR", 0.05}, {"capacityAh", 7.0}}),
+        Ent(21, "Blink", "relay", {1, 0.3f, 1}, {0.05f, 0.05f, 0.05f}, 0, {{"script", "scripts/timer_light.lua"}, {"on_time", 0.5}, {"off_time", 0.5}}),
+        Ent(22, "Bulb", "lamp", {1, 0.5f, 1}, {0.06f, 0.1f, 0.06f}, 0, {{"ratedPower", 5.0}, {"ratedVoltage", 12.0}})};
+    std::string err;
+    CHECK(SavePrefab(tmp, "blinky", "test blinker", parts, {{20, 0, 21, 0}, {21, 1, 22, 0}, {22, 1, 20, 1}, {22, 0, 99, 0}}, {1, 0, 1}, &err));
+    const auto list = ListPrefabs(tmp);
+    CHECK(list.size() == 1 && list[0].name == "blinky" && list[0].parts == 3);
+    Zone z2;
+    z2.entities = {Ent(1, "Floor", "static", {0, -0.05f, 0}, {8, 0.1f, 8}), Ent(3, "B", "prefab", {-1, 0, 0}, {0.1f, 0.1f, 0.1f}, 0, {{"prefab", "blinky"}})};
+    World w4;
+    w4.SetContentRoot(tmp);
+    w4.SetZone(z2);
+    const int bulb = IdNamed(w4, "B.Bulb");
+    CHECK(bulb > 0 && w4.GetZone().links.size() == 3);
+    bool on = false, off = false;
+    for (int k = 0; k < 20; ++k) { w4.Advance(0.1); (w4.PartOf(bulb)->brightness > 0.5 ? on : off) = true; }
+    CHECK(on && off);
+    std::filesystem::remove_all(tmp);
+}
+
+static void TestScripts(const std::string& contentDir) {
+    Zone z;
+    z.name = "Workshop";
+    z.ambientC = 20.f;
+    z.entities = {
+        Ent(1, "Floor", "static", {0, -0.05f, 0}, {8, 0.1f, 8}),
+        // timer: battery -> relay (blinks) -> lamp
+        Ent(2, "Bat1", "battery", {-2, 0.1f, 0}, {0.06f, 0.15f, 0.1f}, 0, {{"voltage", 12.0}, {"internalR", 0.05}, {"capacityAh", 7.0}}),
+        Ent(3, "Blinker", "relay", {-2, 0.3f, 0}, {0.05f, 0.05f, 0.05f}, 0, {{"script", "scripts/timer_light.lua"}, {"on_time", 1.0}, {"off_time", 1.0}}),
+        Ent(4, "Lamp", "lamp", {-2, 0.6f, 0}, {0.06f, 0.1f, 0.06f}, 0, {{"ratedPower", 5.0}, {"ratedVoltage", 12.0}}),
+        // thermostat: battery -> relay -> heater, measuring right next to the heater
+        Ent(5, "Bat2", "battery", {2, 0.1f, 0}, {0.06f, 0.15f, 0.1f}, 0, {{"voltage", 12.0}, {"internalR", 0.03}, {"capacityAh", 40.0}}),
+        Ent(6, "Thermo", "relay", {2, 0.3f, 0.3f}, {0.05f, 0.05f, 0.05f}, 0, {{"script", "scripts/thermostat.lua"}, {"setpoint", 24.0}, {"band", 1.0}, {"sensor", "Probe"}}),
+        Ent(7, "Heater", "heater", {2, 0.3f, 0}, {0.1f, 0.3f, 0.3f}, 0, {{"ratedPower", 150.0}, {"ratedVoltage", 12.0}}),
+        Ent(8, "Probe", "static", {2, 0.3f, 0.25f}, {0.02f, 0.02f, 0.02f}),
+        // vending: a push button whose script drops apples out of the chute
+        Ent(9, "VendButton", "button", {0, 1.0f, -2.f}, {0.05f, 0.05f, 0.02f}, 0, {{"axis", {0, 0, 1}}, {"script", "scripts/vending.lua"}, {"chute", "Chute"}, {"stock", 2.0}}),
+        Ent(10, "Chute", "static", {0, 0.4f, -1.7f}, {0.02f, 0.02f, 0.02f}),
+        // motion lamp: relay closes while someone is near it
+        Ent(11, "Bat3", "battery", {0, 0.1f, 2}, {0.06f, 0.15f, 0.1f}, 0, {{"voltage", 12.0}, {"internalR", 0.05}, {"capacityAh", 7.0}}),
+        Ent(12, "Motion", "relay", {0, 1.f, 2}, {0.05f, 0.05f, 0.05f}, 0, {{"script", "scripts/motion_lamp.lua"}, {"range", 1.0}, {"hold", 0.5}}),
+        Ent(13, "PorchLamp", "lamp", {0, 2.f, 2}, {0.06f, 0.1f, 0.06f}, 0, {{"ratedPower", 5.0}, {"ratedVoltage", 12.0}}),
+        // a broken script and one trying to escape the sandbox: both are stopped, nothing else is affected
+        Ent(14, "Broken", "static", {3, 0.1f, 3}, {0.1f, 0.1f, 0.1f}, 0, {{"script_src", "function on_tick(self) error('boom') end"}}),
+        Ent(15, "Sneaky", "static", {3, 0.1f, -3}, {0.1f, 0.1f, 0.1f}, 0, {{"script_src", "local f = io.open('/etc/passwd')"}}),
+    };
+    z.links = {{2, 0, 3, 0}, {3, 1, 4, 0}, {4, 1, 2, 1},
+               {5, 0, 6, 0}, {6, 1, 7, 0}, {7, 1, 5, 1},
+               {11, 0, 12, 0}, {12, 1, 13, 0}, {13, 1, 11, 1}};
+    World w;
+    w.SetContentRoot(contentDir);
+    w.SetZone(z);
+    CHECK(w.ScriptCount() >= 5);
+    // blinker: on for a second, off for a second
+    bool sawOn = false, sawOff = false;
+    for (int k = 0; k < 40; ++k) { w.Advance(0.1); (w.PartOf(4)->brightness > 0.5 ? sawOn : sawOff) = true; }
+    CHECK(sawOn && sawOff);
+    // thermostat: the heater cycles around the setpoint
+    bool heat = false, idle = false;
+    for (int k = 0; k < 60; ++k) { w.Advance(0.1); (w.PartOf(7)->power > 10 ? heat : idle) = true; }
+    CHECK(heat && idle);
+    const float t = w.AirTemperature({2, 0.3f, 0.25f});
+    CHECK(t > 21.f && t < 28.f);
+    // vending: two presses, two apples; the third press finds it empty
+    int foods0 = 0;
+    for (const Entity& e : w.GetZone().entities) foods0 += e.type == "food";
+    for (int k = 0; k < 3; ++k) { w.DebugActuate(9, true); w.Advance(0.3); w.DebugActuate(9, false); w.Advance(1.0); }
+    int foods = 0, apple = 0;
+    for (const Entity& e : w.GetZone().entities) if (e.type == "food") { ++foods; apple = e.id; }
+    CHECK(foods == foods0 + 2);
+    CHECK(apple > 0 && w.FoodLeftG(apple) > 100.f);
+    CHECK(w.BodyPosition(w.MainBodyOf(apple)).y < 0.2f);          // it fell out of the chute onto the floor
+    bool empty = false, boom = false, sandbox = false;
+    for (const std::string& l : w.ScriptLog()) { empty |= l.find("empty") != std::string::npos; boom |= l.find("boom") != std::string::npos; sandbox |= l.find("Sneaky") != std::string::npos; }
+    CHECK(empty && boom && sandbox);
+    // motion lamp: nobody there -> off; something of hers nearby -> on
+    CHECK(w.PartOf(13)->brightness < 0.1);
+    BodyDesc d;
+    d.shape = Shape::Capsule; d.radius = 0.1f; d.halfHeight = 0.3f; d.pos = {0, 1.f, 2.5f}; d.kinematic = true; d.mass = 50.f;
+    w.AddAgentBody(d);
+    w.Advance(0.3);
+    CHECK(w.PartOf(13)->brightness > 0.5);
+    // hot reload keeps working
+    w.ReloadScripts();
+    w.Advance(0.5);
+    CHECK(w.ScriptCount() >= 5);
 }
 
 static void TestMotorPressesButton(const std::string& contentDir) {
@@ -1227,6 +1376,8 @@ int main(int argc, char** argv) {
     RUN(TestBodyState);
     RUN(TestWardrobeRules);
     RUN(TestMatter);
+    RUN(TestScripts, content);
+    RUN(TestPrefabs, content);
     RUN(TestWaitingAreaNeeds, content);
     RUN(TestMotorPressesButton, content);
     RUN(TestMotorWalksAndStopsAtWall, content);

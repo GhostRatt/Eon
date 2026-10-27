@@ -1,0 +1,10 @@
+{
+  "name": "timer_light",
+  "description": "Lamp on a battery that a timer relay blinks (on 1 s, off 1 s).",
+  "parts": [
+    {"name": "Battery", "type": "battery", "pos": [0.1, 0.08, 0], "size": [0.06, 0.15, 0.1], "color": [60, 60, 60], "params": {"voltage": 12.0, "internalR": 0.05, "capacityAh": 7.0}},
+    {"name": "Timer", "type": "relay", "pos": [0, 0.05, 0], "size": [0.05, 0.05, 0.05], "color": [230, 230, 230], "params": {"script": "scripts/timer_light.lua", "on_time": 1.0, "off_time": 1.0}},
+    {"name": "Lamp", "type": "lamp", "pos": [0, 0.2, 0], "size": [0.06, 0.1, 0.06], "color": [250, 240, 200], "params": {"ratedPower": 5.0, "ratedVoltage": 12.0}}
+  ],
+  "links": [["Battery", 0, "Timer", 0], ["Timer", 1, "Lamp", 0], ["Lamp", 1, "Battery", 1]]
+}

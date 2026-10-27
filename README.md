@@ -34,7 +34,12 @@ Put the Primrose files in `content/characters/jenny/source/` (git-ignored, they 
   G close/open the reaching hand, V lift it 25 cm, X relax both arms, arrows move her (relative to your camera),
   Z cycle stance (Backspace = stand), hold Space to climb onto/off what's in front of her, O make her talk, N show her mind (memory context), F9 write her memory (html/report/json), I open mouth, B bite, L pee.
   Render scripts: `--stance-at T S` (switch stance at time T), `--demo switch|lever|crate` (scripted hand use in Test Zone 01).
-- **Editor:** EDIT mode — LMB select, arrows/PgUp/PgDn move, R/F rotate, N new box, Ctrl+D duplicate, Del delete, Ctrl+S save. P toggles PLAY mode (physics on, grab/push/Space to test); stopping restores the layout.
+- **Editor:** EDIT mode — left **palette** (Tab): click a part (static, battery, lamp, button, lever, relay, tap, food…) or a saved **object** then click in the world to place it (Shift keeps placing). **Behaviours**: click a script to give it to the selected thing, or "+ new script" to write one (opens in your text editor; saving hot-reloads it). Right **inspector**: click any row (name, type, pos, size, color, params) to edit; values are JSON or text, empty removes a param.
+  LMB select (Shift add to selection, Alt a part inside an object), arrows/PgUp/PgDn move, R/F rotate, Ctrl+D duplicate, Del delete, K wire tool (click two terminals; again = disconnect), Ctrl+G save the selection as a new object, Ctrl+E break an object into parts, F5 reload, Ctrl+S save. P toggles PLAY (physics + scripts; grab/push/Space to test); stopping restores the layout.
+
+### Making objects
+- An object is `content/objects/NAME.json`: its parts (any entity types with params and scripts) and the wires between them. Place it in a zone as `{"type": "prefab", "params": {"prefab": "NAME", "set": {"Button.stock": 3}}}`; it rotates with the instance's yaw. Examples: `vending_machine`, `thermostat_heater`, `timer_light`, `motion_lamp`.
+- What an object does is a Lua 5.4 script on a part (`params.script = "scripts/x.lua"`): `on_start`, `on_tick(self, dt)`, `on_press`/`on_release`, timers `after`/`every`, and calls like `self:set_relay(true)`, `self:set_glow(1)`, `world.air_temp(x,y,z)`, `world.agent_near(x,y,z,r)`, `world.spawn("food", x,y,z, {...})`. Scripts are sandboxed and a broken one only stops itself. Jenny never sees any of this; she only feels and sees the physical result.
 
 ## Status
 | Module | Status |

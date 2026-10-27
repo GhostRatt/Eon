@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <unordered_map>
 #include <string>
 #include <vector>
 
@@ -8,6 +9,8 @@
 #include "Math.h"
 #include "Physics.h"
 #include "Zone.h"
+
+struct lua_State;
 
 namespace eon {
 
@@ -138,6 +141,22 @@ public:
     int PuddleCount() const;
     float FoodLeftG(int entityId) const;
 
+    // ---- Object scripts (World_Scripts.cpp): Lua in an entity's "script" (file under the content root) or "script_src" ----
+    // A script is the object's own machinery (a vending machine's logic, a thermostat): it may read and drive the
+    // object's parts. It is world-side: nothing it knows reaches Jenny except through what she can perceive.
+    void SetContentRoot(const std::string& dir) { contentRoot_ = dir; }
+    const std::string& ContentRoot() const { return contentRoot_; }
+    int Spawn(Entity e);                                  // add a new object at runtime (returns its id)
+    void ReloadScripts();                                 // re-read script files (hot reload while running)
+    const std::vector<std::string>& ScriptLog() const { return scriptLog_; }
+    void ScriptLogLine(const std::string& s);
+    int ScriptCount() const { return static_cast<int>(scripts_.size()); }
+    bool AgentNear(const Vec3& p, float r) const;       // something of hers (torso/hand) within r (a motion sensor)
+    void SetRelay(int entityId, bool closed);            // a relay is a switch only scripts throw
+    void SetTapScriptOpen(int entityId, bool open);
+    void SetEmissive(int entityId, float e);
+    void SetColor(int entityId, Rgb c);
+
 private:
     enum class Role : uint8_t { Main, Plunger, Lever, RopeSegment, Clip, Agent };
 
@@ -225,7 +244,7 @@ private:
     GrabRt grab_;
     struct DriveRt { int body = -1; Vec3 target; float maxForce = 0.f, freq = 12.f, damping = 1.f; };
     // matter runtime
-    struct TapRt { int entity = 0, body = -1; Vec3 outLocal, dirLocal{0, -1, 0}; float rate = 60.f, speed = 0.6f; int valve = 0; bool powered = false; Liquid kind = Liquid::Water; int jets = 1; float spread = 0.f; };
+    struct TapRt { int entity = 0, body = -1; Vec3 outLocal, dirLocal{0, -1, 0}; float rate = 60.f, speed = 0.6f; int valve = 0; bool powered = false; Liquid kind = Liquid::Water; int jets = 1; float spread = 0.f; bool scripted = false, scriptOpen = false; };
     struct ContainerRt { int entity = 0, body = -1; float capacity = 300.f; float ml[int(Liquid::Count)] = {}; Vec3 half; int drain = 0; bool dirtyDrain = false; };
     struct PuddleRt { Vec3 pos; float ml[int(Liquid::Count)] = {}; int id = 0; };
     struct FoodRt { int entity = 0, body = -1; float grams = 100.f, left = 100.f, kcalPerG = 0.6f, waterPerG = 0.8f; Vec3 size; bool gone = false; };
@@ -249,6 +268,19 @@ private:
     Vec3 mouth_;
     bool mouthOpen_ = false, hasMouth_ = false;
     int nextPuddleId_ = 1;
+    // scripts runtime
+    struct ScriptRt { int entity = 0; int env = -1; bool broken = false, lastClosed = false; std::string source, file; };
+    void StartScripts();
+    void StepScripts(float dt);
+    void StopScripts();
+    bool LoadScript(ScriptRt& s);
+    lua_State* L_ = nullptr;
+    std::vector<ScriptRt> scripts_;
+    std::vector<std::string> scriptLog_;
+    std::string contentRoot_;
+    float scriptAcc_ = 0.f;
+    std::unordered_map<int, float> emissiveOverride_;
+    std::unordered_map<int, Rgb> colorOverride_;
     struct KinRt { int body = -1; Vec3 pos; Quat rot; };
     std::vector<DriveRt> drives_;
     struct SteadyRt { int body = -1; Quat rot; float maxTorque = 0.f; };

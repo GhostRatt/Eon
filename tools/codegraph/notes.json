@@ -8,6 +8,9 @@
  "Character::ApplyTissueContact": [
   "breast/glute squash: scales the soft bone along the bone axis closest to world up, volume kept (spread 1/sqrt)"
  ],
+ "ExpandPrefabs": [
+  "Parts get ids instance*1000+n, so Zone::NextId skips _from/spawned entities (else ids explode). Buttons on a cabinet face need ~5 mm standoff from neighbours (Jolt margin) or they never travel."
+ ],
  "Learner::Observe": [
   "hands are processed before vision so an action and its effect in the same tick get linked; causeWindow 1s"
  ],

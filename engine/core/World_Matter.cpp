@@ -39,7 +39,9 @@ void World::BuildMatter(Entity& e, int main) {
         t.dirLocal = V(q, "dir", Vec3{0, -1, 0}).Normalized({0, -1, 0});
         t.rate = P(q, "rate", 60.f);       // ml/s (a kitchen tap ~100, a drinking fountain ~40)
         t.speed = P(q, "speed", 0.5f);     // m/s leaving the spout
-        t.valve = q.value("valve", 0);     // entity whose switch state opens it (lever, switch, button)
+        // valve: the entity whose switch state opens it (lever, switch, button), or "script" (the object's script opens it)
+        if (q.contains("valve") && q["valve"].is_string()) t.scripted = q["valve"].get<std::string>() == "script";
+        else t.valve = q.value("valve", 0);
         t.powered = q.value("powered", false);
         t.jets = std::max(1, q.value("jets", 1));        // a shower head sprays several jets
         t.spread = P(q, "spread", 0.f);                    // m/s sideways at the outer jets
@@ -179,7 +181,7 @@ void World::StepMatter(float dt) {
     streamDraw_.clear();
     std::vector<StreamRt> streams;
     for (const TapRt& t : taps_) {
-        bool open = ValveOpen(t.valve);
+        bool open = t.scripted ? t.scriptOpen : ValveOpen(t.valve);
         if (t.powered) { const Part* pp = PartOf(t.entity); open = open && pp && pp->power > 0.5; }
         if (!open) continue;
         Vec3 tp; Quat tq;

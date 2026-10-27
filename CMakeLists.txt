@@ -46,6 +46,24 @@ FetchContent_GetProperties(ufbx)
 if(NOT ufbx_POPULATED)
     FetchContent_Populate(ufbx)
 endif()
+
+# Lua 5.4: object scripts (world machinery: vending machines, thermostats, timers ...)
+FetchContent_Declare(lua
+    GIT_REPOSITORY https://github.com/lua/lua.git
+    GIT_TAG v5.4.6
+    GIT_SHALLOW TRUE)
+FetchContent_GetProperties(lua)
+if(NOT lua_POPULATED)
+    FetchContent_Populate(lua)
+endif()
+file(GLOB LUA_SOURCES ${lua_SOURCE_DIR}/*.c)
+list(FILTER LUA_SOURCES EXCLUDE REGEX ".*/(lua|luac|onelua|ltests)\\.c$")
+add_library(lua STATIC ${LUA_SOURCES})
+target_include_directories(lua PUBLIC ${lua_SOURCE_DIR})
+if(UNIX)
+    target_compile_definitions(lua PRIVATE LUA_USE_POSIX)
+    target_link_libraries(lua PRIVATE m)
+endif()
 add_library(ufbx STATIC ${ufbx_SOURCE_DIR}/ufbx.c)
 target_include_directories(ufbx PUBLIC ${ufbx_SOURCE_DIR})
 
@@ -55,9 +73,10 @@ add_library(eon_core STATIC
     engine/core/Zone.cpp
     engine/core/World.cpp
     engine/core/World_Matter.cpp
+    engine/core/World_Scripts.cpp
     engine/core/Physics.cpp)
 target_include_directories(eon_core PUBLIC engine)
-target_link_libraries(eon_core PUBLIC nlohmann_json::nlohmann_json PRIVATE Jolt)
+target_link_libraries(eon_core PUBLIC nlohmann_json::nlohmann_json PRIVATE Jolt lua)
 target_compile_definitions(eon_core PUBLIC EON_CONTENT_DIR="${CMAKE_SOURCE_DIR}/content")
 if(MSVC)
     target_compile_options(eon_core PRIVATE /W4)

@@ -31,7 +31,10 @@ Raw commands, if needed:
 - Zones are generated: edit `tools/make_zones.py`, then `python3 tools/make_zones.py content/zones`.
 
 ## World content
-- Zone entity types: static/dynamic boxes, `battery` `wire` (hidden = in-wall, no body) `lamp` `button` `switch` `lever` `motor` `resistor` `heater`, matter: `tap` (valve=entity id, rate, speed, jets, spread) `container` (capacity, water) `bowl` (static container, drain=valve id) `food` (grams, kcalPerG, waterPerG).
+- Zone entity types: static/dynamic boxes, `battery` `wire` (hidden = in-wall, no body) `lamp` `button` `switch` `lever` `motor` `resistor` `heater` `relay` `prefab`, matter: `tap` (valve=entity id, rate, speed, jets, spread) `container` (capacity, water) `bowl` (static container, drain=valve id) `food` (grams, kcalPerG, waterPerG).
+- Objects (prefabs): `content/objects/NAME.json` = parts + internal links (by part name). Zone entity `type: "prefab"`, `params.prefab`, optional `params.set {"Part.key": v}`. Expanded in `World::SetZone` (`ExpandPrefabs`): ids `instance*1000+n`, names `Inst.Part`, `"$Part"` → sibling name, `"#Part"` → sibling id, yaw rotates pos and axis/dir/hinge/out. Parts carry `params._from`; `ZoneToJson` saves only the instance. `SavePrefab`/`ListPrefabs` for tools.
+- Scripts: Lua 5.4 per entity, `params.script` (file under content/) or `params.script_src`. Callbacks `on_start`, `on_tick(self,dt)` 30 Hz, `on_press`/`on_release`; `after`/`every` timers; `self:` param/set_param/closed/power/set_relay/set_tap/set_glow/set_color/push/water/food_left; `world.` find/time/air_temp/agent_near/log/spawn. Sandboxed (no io/require). Errors land in `World::ScriptLog`, the script stops. A `relay` is a switch only scripts drive.
+- Editor (`eon_editor`): palette (parts, objects, behaviours), inspector (click a row to edit; JSON or text), K wire tool, Shift-click + Ctrl+G save as object, Ctrl+E break object apart, scripts hot-reload on save. `--shot F.png --select NAME --cam ...` for screenshots.
 - Operator test of fixtures: sim `--actuate NAME` (holds/flips it); in tests use `World::DebugActuate`, `ContainerMl`, `PuddleMl`, `AirTemperature`, `FoodLeftG`.
 
 ## Rules of the project

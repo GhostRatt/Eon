@@ -1,0 +1,10 @@
+{
+  "name": "motion_lamp",
+  "description": "Porch lamp that turns on when someone comes within 1.5 m, off 3 s after they leave.",
+  "parts": [
+    {"name": "Battery", "type": "battery", "pos": [0.1, 0.08, 0], "size": [0.06, 0.15, 0.1], "color": [60, 60, 60], "params": {"voltage": 12.0, "internalR": 0.05, "capacityAh": 7.0}},
+    {"name": "Sensor", "type": "relay", "pos": [0, 1.9, 0], "size": [0.05, 0.05, 0.05], "color": [230, 230, 230], "params": {"script": "scripts/motion_lamp.lua", "range": 1.5, "hold": 3.0}},
+    {"name": "Lamp", "type": "lamp", "pos": [0, 2.05, 0], "size": [0.06, 0.1, 0.06], "color": [250, 240, 200], "params": {"ratedPower": 5.0, "ratedVoltage": 12.0}}
+  ],
+  "links": [["Battery", 0, "Sensor", 0], ["Sensor", 1, "Lamp", 0], ["Lamp", 1, "Battery", 1]]
+}

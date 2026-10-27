@@ -1,0 +1,12 @@
+{
+  "name": "thermostat_heater",
+  "description": "Battery heater with a thermostat relay that holds the air near it at ~22 °C.",
+  "parts": [
+    {"name": "Battery", "type": "battery", "pos": [0.3, 0.08, 0], "size": [0.06, 0.15, 0.1], "color": [60, 60, 60], "params": {"voltage": 12.0, "internalR": 0.03, "capacityAh": 40.0}},
+    {"name": "Heater", "type": "heater", "pos": [0, 0.25, 0], "size": [0.45, 0.45, 0.12], "color": [150, 110, 90], "params": {"ratedPower": 150.0, "ratedVoltage": 12.0}},
+    {"name": "Thermostat", "type": "relay", "pos": [0.3, 0.3, 0], "size": [0.05, 0.08, 0.03], "color": [230, 230, 230],
+     "params": {"script": "scripts/thermostat.lua", "setpoint": 22.0, "band": 1.0, "sensor": "$Probe"}},
+    {"name": "Probe", "type": "static", "pos": [0, 0.3, 0.3], "size": [0.02, 0.02, 0.02], "color": [200, 200, 200], "params": {"marker": true}}
+  ],
+  "links": [["Battery", 0, "Thermostat", 0], ["Thermostat", 1, "Heater", 0], ["Heater", 1, "Battery", 1]]
+}

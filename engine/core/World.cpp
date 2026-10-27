@@ -44,22 +44,31 @@ constexpr float kSegmentLength = 0.03f;    // rope segment length (m)
 } // namespace
 
 World::World() : physics_(std::make_unique<Physics>()) {}
-World::~World() = default;
+World::~World() { StopScripts(); }
 
 bool World::Load(const std::string& path, std::string* error) {
     Zone z;
     if (!LoadZone(path, z, error)) return false;
     path_ = path;
+    // content root = the folder above zones/ (scripts and objects live beside it)
+    {
+        std::string dir = path.substr(0, path.find_last_of("/\\") == std::string::npos ? 0 : path.find_last_of("/\\"));
+        if (dir.size() >= 6 && dir.substr(dir.size() - 5) == "zones") dir = dir.substr(0, dir.size() - 6);
+        if (contentRoot_.empty()) contentRoot_ = dir.empty() ? "." : dir;
+    }
     SetZone(z);
     return true;
 }
 
 void World::SetZone(const Zone& zone) {
     zone_ = zone;
+    std::string log;
+    if (!ExpandPrefabs(zone_, contentRoot_.empty() ? "content" : contentRoot_, &log)) ScriptLogLine("objects: " + log);
     Reset();
 }
 
 void World::Reset() {
+    StopScripts();
     physics_->Clear();
     bodies_.clear();
     terminals_.clear();
@@ -103,6 +112,7 @@ void World::Reset() {
     UpdateSwitchStates();
     UpdateConnections();
     circuit_.Step(0.0);
+    StartScripts();
 }
 
 int World::AddBody(const BodyDesc& d, int entity, Role role, const Vec3& drawSize, Rgb color, Quat drawOffset) {
@@ -137,6 +147,7 @@ int World::FindTerminal(int entity, int term) const {
 }
 
 void World::BuildEntity(Entity& e) {
+    if (e.type == "prefab") return;   // placeholder: its parts are separate entities
     // hidden wires run inside walls: electrical only (ideal links), nothing physical or visible
     if (e.type == "wire" && e.params.value("hidden", false)) return;
     const Quat rot = Quat::FromEulerDeg(e.rotDeg);
@@ -442,6 +453,7 @@ void World::FixedStep(float dt) {
     UpdateConnections();
     circuit_.Step(dt);
     StepMatter(dt);
+    StepScripts(dt);
 }
 
 void World::ApplyForces(float dt) {
@@ -798,6 +810,13 @@ void World::BuildRenderFrame(RenderFrame& out) const {
         out.pieces.push_back(p);
     }
     AppendMatterPieces(out);
+    // what scripts set on their objects (a light turned on by logic, a status colour)
+    for (RenderPiece& rp : out.pieces) {
+        auto e = emissiveOverride_.find(rp.entity);
+        if (e != emissiveOverride_.end()) rp.emissive = std::max(rp.emissive, e->second);
+        auto c = colorOverride_.find(rp.entity);
+        if (c != colorOverride_.end()) rp.color = c->second;
+    }
 }
 
 } // namespace eon

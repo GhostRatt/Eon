@@ -42,6 +42,8 @@ wa += [
     ent(38, "Apple1", "food", (0.93, 0.83, -1.62), (0.075, 0.075, 0.075), (190, 40, 40), mass=0.15, params={"grams": 150.0, "kcalPerG": 0.52, "waterPerG": 0.85}),
     ent(39, "Apple2", "food", (1.06, 0.83, -1.56), (0.075, 0.075, 0.075), (120, 170, 50), mass=0.15, params={"grams": 150.0, "kcalPerG": 0.52, "waterPerG": 0.85}),
     ent(40, "Bread", "food", (1.0, 0.83, -1.7), (0.12, 0.05, 0.08), (200, 160, 100), mass=0.08, params={"grams": 80.0, "kcalPerG": 2.6, "waterPerG": 0.35}),
+    # Snacks: a vending machine object (content/objects/vending_machine.json): push its button, an apple drops into the tray
+    ent(60, "Vending", "prefab", (-0.4, 0.0, -2.69), (0.1, 0.1, 0.1), (0, 0, 0), params={"prefab": "vending_machine"}),
     # Heat: a wall heater on its own battery, switched by the rocker beside it
     ent(41, "Heater", "heater", (-2.93, 0.35, 0.0), (0.12, 0.45, 0.7), (150, 110, 90), params={"ratedPower": 150.0, "ratedVoltage": 12.0}),
     ent(42, "HeaterBattery", "battery", (-2.93, 0.9, 0.6), (0.06, 0.15, 0.1), (60, 60, 60), params={"voltage": 12.0, "internalR": 0.03, "capacityAh": 40.0}),

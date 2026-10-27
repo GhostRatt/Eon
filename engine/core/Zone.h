@@ -55,6 +55,18 @@ struct Zone {
 bool IsElectrical(const std::string& type);
 
 bool LoadZone(const std::string& path, Zone& out, std::string* error = nullptr);
+
+// ---- Object library (prefabs): content/objects/<name>.json ----
+// A prefab is a reusable object made of parts (any entity types, with params and scripts) plus its internal wiring.
+// A zone places one with an entity of type "prefab" (params.prefab = name; params.set = {"Part.key": value} overrides).
+// Expansion turns it into real entities named "<Instance>.<Part>" with stable ids (instance id * 1000 + part #),
+// so wires to its parts and saved zones keep working. "$Part" in a part's params means "<Instance>.Part".
+struct PrefabInfo { std::string name, description; int parts = 0; };
+bool ExpandPrefabs(Zone& zone, const std::string& contentRoot, std::string* log = nullptr);
+std::vector<PrefabInfo> ListPrefabs(const std::string& contentRoot);
+// Saves entities (and the links among them) as a new prefab, positions relative to `origin`.
+bool SavePrefab(const std::string& contentRoot, const std::string& name, const std::string& description,
+                const std::vector<Entity>& parts, const std::vector<TerminalLink>& links, const Vec3& origin, std::string* error = nullptr);
 bool SaveZone(const std::string& path, const Zone& zone, std::string* error = nullptr);
 
 nlohmann::json ZoneToJson(const Zone& zone);

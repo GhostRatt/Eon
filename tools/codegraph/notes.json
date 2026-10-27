@@ -6,7 +6,7 @@
   "held food hangs below the palm: to eat, aim the palm at (mouth + 5cm forward) - (food - palm); bite reach is 6cm from the food's surface"
  ],
  "BodyState::Swallow": [
-  "Digestion compartments in game hours: stomach (exp 1.2 h) -> gut (6 h) -> colon (14 h) -> rectum. Stool = 4x residue (75% water). Need::Bowel = rectumG/2.2. Hunger still drops at swallow (satiety), kcal not delayed."
+  "Stomach only (exp 1.2 game h): drives the 'full' feeling. Food water arrives separately via Intake.ml -> Drink -> bladder. Hunger drops at swallow (satiety). (Stool/bowel was removed on request: pee only.)"
  ],
  "Character::ApplyTissueContact": [
   "breast/glute squash: scales the soft bone along the bone axis closest to world up, volume kept (spread 1/sqrt)"
@@ -30,9 +30,6 @@
  "Perception::Sense": [
   "SENSOR FIREWALL: entity ids/names/types must never leave this function; tracks are scrambled ids keyed by zone+entity"
  ],
- "TestDigestion": [
-  "1600 g / 2000 kcal / 45 g residue day -> ~145 g in the rectum after 30 h (normal 100-200 g/day)."
- ],
  "World::AirTemperature": [
   "heater warmth = W*0.012/(0.25+d^2) C, capped 25 per heater: a 120 W 12 V element is only ~3 C at 45 cm (realistic)"
  ],
@@ -50,8 +47,5 @@
  ],
  "World::RayCast": [
   "pass skipAgent=true from Jenny's code or rays hit her own hands/torso"
- ],
- "World::SpawnStool": [
-  "Raycasts down (skipAgent) first: if a container/bowl is below, stool goes into ContainerRt.stoolG (drawn as lumps, cleared by its drain/flush). Spawning a body there would start inside the static toilet box and get ejected."
  ]
 }

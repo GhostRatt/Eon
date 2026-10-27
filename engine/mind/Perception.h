@@ -49,7 +49,7 @@ struct Percept {
     std::vector<std::pair<std::string, float>> feelings;   // ("cold", 0.7) ...
     // mouth and body (what she takes in / lets out, felt directly)
     float drankMl = 0.f, biteG = 0.f;
-    bool chewing = false, peeing = false, pooping = false;
+    bool chewing = false, peeing = false;
     float airC = 20.f;              // how warm the air feels where she is
 };
 

@@ -62,7 +62,6 @@ void World::BuildMatter(Entity& e, int main) {
         f.grams = f.left = P(q, "grams", std::max(1.f, e.massKg * 1000.f));
         f.kcalPerG = P(q, "kcalPerG", 0.52f);    // apple-ish
         f.waterPerG = P(q, "waterPerG", 0.85f);
-        f.residue = P(q, "residue", 0.1f);     // indigestible share of the dry matter (fiber, skin, husk)
         f.size = e.size;
         // voxel block, ~12 across its longest side (6 mm cells on an apple: a bite reads as a bite)
         const float big = std::max({e.size.x, e.size.y, e.size.z});
@@ -78,8 +77,6 @@ void World::BuildMatter(Entity& e, int main) {
         foods_.push_back(f);
     } else if (e.type == "heater") {
         heaters_.push_back({e.id, main});
-    } else if (e.type == "stool") {
-        stools_.push_back({e.id, main, static_cast<float>(P(q, "grams", e.massKg * 1000.f)), false});
     }
 }
 
@@ -249,7 +246,7 @@ void World::StepMatter(float dt) {
     // drains (a flushed toilet, a pulled plug)
     for (ContainerRt& c : containers_)
         if (c.drain > 0 && ValveOpen(c.drain))
-            for (float& m : c.ml) m = std::max(0.f, m - 400.f * dt), c.stoolG = 0.f;
+            for (float& m : c.ml) m = std::max(0.f, m - 400.f * dt);
     // puddles evaporate (faster when there's more surface)
     for (PuddleRt& q : puddles_) {
         const float tot = Total(q.ml);
@@ -257,18 +254,6 @@ void World::StepMatter(float dt) {
         for (float& m : q.ml) m = std::max(0.f, m - loss * (tot > 0 ? m / tot : 0.f));
     }
     puddles_.erase(std::remove_if(puddles_.begin(), puddles_.end(), [](const PuddleRt& q) { return Total(q.ml) < 0.05f; }), puddles_.end());
-    // a flush takes stool in the bowl away with the water
-    for (ContainerRt& c : containers_) {
-        if (c.drain <= 0 || !ValveOpen(c.drain)) continue;
-        Vec3 cp; Quat cq;
-        physics_->GetTransform(bodies_[c.body].h, cp, cq);
-        for (StoolRt& s : stools_) {
-            if (s.gone) continue;
-            const Vec3 l = cq.Conjugate().Rotate(BodyPosition(s.body) - cp);
-            if (std::fabs(l.x) < c.half.x && std::fabs(l.z) < c.half.z && l.y < c.half.y + 0.02f && l.y > -c.half.y - 0.02f) s.gone = true;
-        }
-    }
-    for (StoolRt& s : stools_) if (s.gone) physics_->SetTransform(bodies_[s.body].h, Vec3{1000.f + s.entity, -600.f, 0.f}, Quat{});
     // eaten food is gone from the world
     for (FoodRt& f : foods_) if (f.gone) physics_->SetTransform(bodies_[f.body].h, Vec3{1000.f + f.entity, -500.f, 0.f}, Quat{});
 }
@@ -316,8 +301,6 @@ float World::Bite(const Vec3& mouth, float reach) {
     intake_.foodG += g;
     intake_.kcal += g * f.kcalPerG;
     intake_.ml[int(Liquid::Water)] += g * f.waterPerG;
-    intake_.foodDryG += g * (1.f - f.waterPerG);
-    intake_.residueG += g * (1.f - f.waterPerG) * f.residue;
     if (f.left < 1.f) f.gone = true;   // the last scrap is swallowed with the bite
     return g;
 }
@@ -339,39 +322,6 @@ int World::PuddleCount() const { return static_cast<int>(puddles_.size()); }
 int World::FoodBites(int entityId) const {
     for (const FoodRt& f : foods_) if (f.entity == entityId) return f.bites;
     return 0;
-}
-
-int World::SpawnStool(const Vec3& pos, const Vec3& vel, float grams) {
-    if (grams < 1.f) return 0;
-    // it drops: into a bowl right below (into its water), or onto whatever is there
-    RayHit hit;
-    const bool below = RayCast(pos, {0, -1, 0}, 1.5f, hit, true);
-    if (below)
-        for (ContainerRt& c : containers_)
-            if (c.entity == hit.entity) { c.stoolG += grams; return c.entity; }
-    Entity e;
-    e.type = "stool";
-    e.name = "stool";
-    // a soft log ~2.5 cm thick, as long as its mass makes it (density ~1.05 g/cm3)
-    const float len = std::clamp(grams / (2.5f * 2.5f * 1.05f) / 100.f, 0.015f, 0.16f);
-    e.size = {0.025f, 0.025f, len};
-    e.pos = below ? hit.point + Vec3{0, 0.016f, 0} : pos;
-    e.rotDeg = {0, std::atan2(vel.x, vel.z) * 57.29578f, 0};
-    e.massKg = grams / 1000.f;
-    e.color = {110, 72, 40};
-    e.params = {{"material", "soft"}, {"grams", grams}};
-    return Spawn(e);
-}
-
-float World::ContainerStoolG(int entityId) const {
-    for (const ContainerRt& c : containers_) if (c.entity == entityId) return c.stoolG;
-    return 0.f;
-}
-
-int World::StoolCount() const {
-    int n = 0;
-    for (const StoolRt& s : stools_) n += !s.gone;
-    return n;
 }
 
 float World::FoodLeftG(int entityId) const {
@@ -413,27 +363,6 @@ void World::AppendMatterPieces(RenderFrame& out) const {
                     x = x1 + 1;
                 }
     }
-    // stool in a bowl: a few brown lumps at the bottom of its water
-    for (const ContainerRt& c : containers_) {
-        if (c.stoolG < 1.f) continue;
-        Vec3 cp; Quat cq;
-        physics_->GetTransform(bodies_[c.body].h, cp, cq);
-        const int n = std::clamp(static_cast<int>(c.stoolG / 40.f) + 1, 1, 5);
-        const float len = std::clamp(c.stoolG / n / (2.5f * 2.5f * 1.05f) / 100.f, 0.015f, 0.16f);
-        for (int k = 0; k < n; ++k) {
-            RenderPiece rp;
-            rp.pos = cp + cq.Rotate(Vec3{(k - 0.5f * (n - 1)) * 0.03f, c.half.y + 0.004f, 0.02f * ((k % 2) ? 1.f : -1.f)});
-            rp.rot = cq * Quat::AxisAngle({0, 1, 0}, 0.7f * k);
-            rp.size = {0.024f, 0.024f, len};
-            rp.color = {110, 72, 40};
-            rp.entity = c.entity;
-            out.pieces.push_back(rp);
-        }
-    }
-    // stool: soft, brown, slightly irregular
-    for (const StoolRt& s : stools_)
-        for (RenderPiece& rp : out.pieces)
-            if (rp.entity == s.entity && s.gone) rp.size = {0, 0, 0};
     // heaters glow when they draw power
     for (const HeaterRt& h : heaters_) {
         const Part* part = PartOf(h.entity);

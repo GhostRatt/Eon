@@ -52,7 +52,7 @@ private:
     void SelfHappened(const std::string& what, double t);   // an effect on her own body ("I'm less thirsty")
     uint32_t NearMouth(const Percept& p) const;
     double lastDrink_ = -1e9, lastBite_ = -1e9;
-    bool wasPeeing_ = false, wasPooping_ = false;
+    bool wasPeeing_ = false;
 
     std::unordered_map<uint32_t, TrackMem> tracks_;
     std::unordered_map<std::string, int> nameUse_;

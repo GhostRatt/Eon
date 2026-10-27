@@ -289,13 +289,6 @@ void Learner::Observe(const Percept& p) {
         SelfHappened("my bladder is relieved", t);
     }
     wasPeeing_ = p.peeing;
-    if (p.pooping && !wasPooping_) {
-        const uint32_t a = graph.Ensure(NodeKind::Action, "poop", t);
-        graph.Touch(a, t, 0.1f);
-        recent_.push_back({a, t});
-        SelfHappened("my bowels are relieved", t);
-    }
-    wasPooping_ = p.pooping;
 
     if (t - lastSpatial_ > 2.0) { Spatial(p); lastSpatial_ = t; }
 }

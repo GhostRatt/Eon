@@ -37,7 +37,6 @@ struct MotorIntent {
     bool climb = false;                // with moveDir: climb up onto / down off what's in front of her
     MouthAction mouth = MouthAction::Closed;
     bool pee = false;                  // let the bladder go (wherever she is: on a toilet, or not)
-    bool poop = false;                 // push (wherever she is: on a toilet, squatting, or into her underwear)
 };
 
 // What her body physically feels from moving (fed to BodyState / the mind's proprioception).

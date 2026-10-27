@@ -7,7 +7,7 @@
 namespace eon {
 
 // Jenny's physiology (port of the UE EonBody component). Pure simulation: no rendering, no names leak.
-enum class Need : int { Fatigue, Hunger, Thirst, Bladder, Hygiene, Boredom, Libido, Bowel, Count };
+enum class Need : int { Fatigue, Hunger, Thirst, Bladder, Hygiene, Boredom, Libido, Count };
 enum class Thermal : int { Freezing, Cold, Comfortable, Warm, Hot };
 
 struct BodyInputs {
@@ -47,16 +47,10 @@ public:
     // Physical intake/output (amounts are real: ml, kcal). Water is absorbed and reaches the bladder over ~45 game min.
     void Drink(float ml, bool urine = false);
     void Eat(float kcal);
-    // Digestion: what she swallows sits in her stomach (fullness), empties into the gut over ~2 game hours, its
-    // energy is taken up, and the part she can't digest (plus water) moves on and collects as stool over about a
-    // day; a full rectum is the urge to go (Need::Bowel). 1 g residue -> ~4 g stool (stool is ~75% water).
-    void Swallow(float grams, float kcal, float residueG);
-    void Defecate(float grams);
+    // What she swallows sits in her stomach (the "full" feeling) and empties over ~2 game hours.
+    // Its water goes the way drinks do (absorbed, then bladder: she pees it out).
+    void Swallow(float grams, float kcal);
     float stomachG = 0.f;             // food in the stomach
-    float gutG = 0.f;                 // stool-to-be in the small intestine
-    float colonG = 0.f;               // in the colon, firming up
-    float rectumG = 0.f;              // ready to come out
-    float digestedG = 0.f;            // food that has left the stomach so far (lifetime)
     float Fullness() const { return std::clamp(stomachG / 900.f, 0.f, 1.f); }   // 0 empty .. 1 stuffed
     void Urinate(float ml);           // empties the bladder (400 ml = full)
     void WetSkin(float ml, bool urine = false);

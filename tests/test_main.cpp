@@ -570,6 +570,37 @@ static void TestStances() {
     CHECK(j.ch.BonePos(r.upperarm[1]).y < j.ch.BonePos(r.upperarm[0]).y - 0.15f);
 }
 
+static void TestSitOnSeat() {
+    {   // a 45 cm box behind her: she sits on it, feet on the floor, and stands back up
+        World w;
+        w.SetZone(FloorZone(0.45f, -1.95f));   // box spans z -1.95 .. -0.45
+        TestJenny j;
+        CHECK(j.Init(w, {0, 0, -0.3f}, 0.f));  // facing +Z, seat edge 15 cm behind her
+        const RigMap& r = j.ch.Rig();
+        j.in.stance = Stance::SitSeat;
+        j.Run(w, 2.5);
+        CHECK(j.motor.CurrentStance() == Stance::SitSeat);
+        CHECK(!j.motor.Feedback().noSeat);
+        const float hip = j.ch.BonePos(r.pelvis).y;
+        CHECK(hip > 0.48f && hip < 0.7f);
+        CHECK(j.ch.BonePos(r.foot[0]).y < 0.15f && j.ch.BonePos(r.foot[1]).y < 0.15f);
+        j.in.stance = Stance::Stand;
+        j.Run(w, 2.0);
+        CHECK(j.motor.CurrentStance() == Stance::Stand);
+        CHECK(j.ch.BonePos(r.pelvis).y > hip + 0.2f);
+    }
+    {   // nothing behind her: she doesn't sit on thin air
+        World w;
+        w.SetZone(FloorZone(0.f, 0.f));
+        TestJenny j;
+        CHECK(j.Init(w, {0, 0, 0}, 0.f));
+        j.in.stance = Stance::SitSeat;
+        j.Run(w, 2.0);
+        CHECK(j.motor.CurrentStance() == Stance::Stand);
+        CHECK(j.motor.Feedback().noSeat);
+    }
+}
+
 static void TestStepAndClimb() {
     {   // a 20 cm step: she just walks up onto it
         World w;
@@ -675,6 +706,7 @@ int main(int argc, char** argv) {
     TestMotorWalksAndStopsAtWall(content);
     TestMotorGripsAndLifts(content);
     TestStances();
+    TestSitOnSeat();
     TestStepAndClimb();
     TestLipSync();
     TestSleep();

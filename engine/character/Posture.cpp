@@ -27,6 +27,9 @@ void ApplyPosture(Character& ch, const PostureParams& p) {
     const float t = p.time;
 
     ch.ResetPose();
+    // feet keep their own orientation (flat on the floor) whatever the hips and back do above them
+    Quat footRot[2];
+    for (int i = 0; i < 2; ++i) footRot[i] = r.foot[i] >= 0 ? ch.World()[r.foot[i]].r : Quat{};
 
     // Whole-body motion through the pelvis (soft tissue reacts to all of this)
     if (r.pelvis >= 0) {
@@ -106,7 +109,10 @@ void ApplyPosture(Character& ch, const PostureParams& p) {
         }
         if (p.footOverride) foot = p.footTarget[i];
         const Vec3 pole = p.kneePoleOverride ? p.kneePole[i] : knee + fwd * 0.5f;
-        ch.SolveTwoBone(r.thigh[i], r.calf[i], r.foot[i], foot, pole, 1.f, !p.footFollow);
+        ch.SolveTwoBone(r.thigh[i], r.calf[i], r.foot[i], foot, pole, 1.f, false);
+        if (!p.footFollow) {
+            ch.RotateBoneWorld(r.foot[i], (footRot[i] * ch.World()[r.foot[i]].r.Conjugate()).Normalized());
+        }
         if (p.footFollow) {
             // feet relax/point; the floor pushes the toes up (lying face down the tops of the feet lie flat)
             const Vec3 kneeAxis = (ch.BonePos(r.calf[i]) - ch.BonePos(r.foot[i])).Cross(pole - ch.BonePos(r.calf[i])).Normalized(left);

@@ -38,6 +38,7 @@ const char* StanceName(Stance s) {
     case Stance::LieBack: return "lie on back";
     case Stance::LieLeft: return "lie on left side";
     case Stance::LieRight: return "lie on right side";
+    case Stance::SitSeat: return "sit on seat";
     default: return "?";
     }
 }
@@ -47,7 +48,7 @@ namespace {
 // Which body positions you can go straight between (a person doesn't go from standing to lying in one move)
 const std::vector<std::vector<Stance>>& StanceGraph() {
     static const std::vector<std::vector<Stance>> g = {
-        /*Stand */ {Stance::Crouch},
+        /*Stand */ {Stance::Crouch, Stance::SitSeat},
         /*Crouch*/ {Stance::Stand, Stance::Kneel, Stance::Sit},
         /*Kneel */ {Stance::Crouch, Stance::Crawl, Stance::Sit},
         /*Sit   */ {Stance::Crouch, Stance::Kneel, Stance::LieBack},
@@ -56,6 +57,7 @@ const std::vector<std::vector<Stance>>& StanceGraph() {
         /*Back  */ {Stance::Sit, Stance::LieLeft, Stance::LieRight},
         /*Left  */ {Stance::LieBack, Stance::Prone},
         /*Right */ {Stance::LieBack, Stance::Prone},
+        /*Seat  */ {Stance::Stand},
     };
     return g;
 }
@@ -92,6 +94,7 @@ float HopDuration(Stance a, Stance b) {
     if (is(Stance::Sit, Stance::LieBack)) return 1.2f;
     if (is(Stance::LieBack, Stance::LieLeft) || is(Stance::LieBack, Stance::LieRight)) return 1.0f;
     if (is(Stance::Prone, Stance::LieLeft) || is(Stance::Prone, Stance::LieRight)) return 1.0f;
+    if (is(Stance::Stand, Stance::SitSeat)) return 1.1f;
     return 0.8f;
 }
 
@@ -233,7 +236,16 @@ void Motor::UpdateStance(const MotorIntent& in, float dt) {
 
 void Motor::PrePhysics(Character& ch, World& world, const MotorIntent& in, float dt) {
     EnsureBodies(ch, world);
-    UpdateStance(in, dt);
+    // sitting down needs something behind her to sit on (feel for it before committing)
+    MotorIntent want = in;
+    if (in.stance == Stance::SitSeat && stance_ != Stance::SitSeat && trans_ >= 1.f) {
+        if (stance_ != Stance::Stand) want.stance = Stance::Stand;
+        else if (!FindSeat(ch, world)) { want.stance = Stance::Stand; fb_.noSeat = true; }
+        else fb_.noSeat = false;
+    } else if (in.stance != Stance::SitSeat) {
+        fb_.noSeat = false;
+    }
+    UpdateStance(want, dt);
     if (in.climb && !climbing_ && stance_ == Stance::Stand && trans_ >= 1.f) StartClimb(ch, world, in);
     StepLocomotion(ch, world, in, dt);
     UpdateHands(ch, world, in, dt);
@@ -358,7 +370,7 @@ void Motor::StepLocomotion(Character& ch, World& world, const MotorIntent& in, f
         else if (Flat(vel_).Length() > 0.1f) targetYaw = std::atan2(vel_.x, vel_.z);
         const float rate = Lying() ? turnRate * 0.25f : stance_ == Stance::Crawl ? turnRate * 0.5f : turnRate;
         const float canTurn = (stance_ == Stance::Sit || stance_ == Stance::Kneel || stance_ == Stance::LieBack ||
-                               stance_ == Stance::LieLeft || stance_ == Stance::LieRight) ? 0.f : 1.f;
+                               stance_ == Stance::LieLeft || stance_ == Stance::LieRight || stance_ == Stance::SitSeat) ? 0.f : 1.f;
         const float d = WrapAngle(targetYaw - yaw_);
         yaw_ = WrapAngle(yaw_ + std::clamp(d, -rate * dt, rate * dt) * canTurn);
     }
@@ -664,6 +676,27 @@ Motor::Targets Motor::StanceTargets(Character& ch, World& world, Stance st, floa
         }
         break;
     }
+    case Stance::SitSeat: {
+        // on a chair / bed edge: thighs level, knees bent, feet flat on the floor, hands on the thighs
+        const Vec3 hip = Vec3{seat_.x, seat_.y + 0.1f, seat_.z};
+        t.pelvisOffset = hip - P0;
+        t.tilt = Quat::AxisAngle(L, -0.06f);
+        t.lean = 0.12f;
+        for (int i = 0; i < 2; ++i) {
+            const Vec3 thJ = hip + (ch.BindPos(r.thigh[i]) - P0);
+            Vec3 knee = thJ + F * (dims_.thigh * 0.97f) + L * (side(i) * 0.03f);
+            knee.y = std::max(g + 0.25f, thJ.y + 0.02f);
+            Vec3 foot = knee + F * 0.04f;
+            foot.y = GroundAt(world, foot) + ankle;
+            t.foot[i] = foot;
+            t.kneePole[i] = knee + F * 1.f + U * 0.3f;
+            t.hand[i] = (thJ + knee) * 0.5f + F * 0.06f + U * 0.11f + L * (side(i) * 0.02f);
+            t.palmDown[i] = true;
+            t.elbowPole[i] = shRest[i] + L * (side(i) * 0.3f) - U * 0.4f - F * 0.2f;
+            t.elbowOverride[i] = true;
+        }
+        break;
+    }
     case Stance::LieLeft:
     case Stance::LieRight: {
         // on her side: roll the lying-on-back body about its length, shoulders a little higher than the hips
@@ -729,6 +762,27 @@ Motor::Targets Motor::StanceTargets(Character& ch, World& world, Stance st, floa
     return t;
 }
 
+bool Motor::FindSeat(Character& ch, World& world) {
+    // something solid behind her at seat height (chair, bed edge, box, low wall), with room to sit
+    const Vec3 F = ch.placement.r.Rotate({0, 0, 1});
+    for (float d = 0.12f; d <= 0.5f; d += 0.04f) {
+        const Vec3 p = pos_ - F * d;
+        RayHit hit;
+        if (!world.RayCast(Vec3{p.x, pos_.y + 1.1f, p.z}, {0, -1, 0}, 1.1f, hit, true)) continue;
+        const float h = hit.point.y - pos_.y;
+        if (h < 0.3f || h > 0.8f) continue;
+        const float m = world.BodyMass(hit.body);
+        if (m > 0.f && m < 15.f) continue;   // too light/wobbly to take her weight
+        // the seat has to be deep enough for her bottom
+        RayHit deep;
+        const Vec3 q = p - F * 0.14f;
+        if (!world.RayCast(Vec3{q.x, pos_.y + 1.1f, q.z}, {0, -1, 0}, 1.1f, deep, true) || std::fabs(deep.point.y - hit.point.y) > 0.06f) continue;
+        seat_ = Vec3{q.x, std::max(hit.point.y, deep.point.y), q.z};
+        return true;
+    }
+    return false;
+}
+
 float Motor::LieSurface(World& world, const Vec3& p) const {
     // lie on whatever is under her hips (floor, a bed)
     RayHit bed;
@@ -789,6 +843,12 @@ void Motor::PostPhysics(Character& ch, World& world, PostureParams base, float d
         if (trans_ < 1.f) {
             Targets nxt = nextFlip_ ? StanceTargetsFlipped(ch, world, next_, dt) : StanceTargets(ch, world, next_, dt);
             tg = Blend(cur, nxt, Smooth(trans_));
+            // getting up/down: the chest goes forward over the feet mid-move (weight over the base of support)
+            auto pair = [&](Stance a, Stance b) { return (stance_ == a && next_ == b) || (stance_ == b && next_ == a); };
+            const float bump = std::sin(kPi * trans_);
+            if (pair(Stance::Stand, Stance::SitSeat)) tg.lean += 0.65f * bump;
+            else if (pair(Stance::Stand, Stance::Crouch)) tg.lean += 0.2f * bump;
+            else if (pair(Stance::Crouch, Stance::Sit)) tg.lean += 0.3f * bump;
         } else {
             tg = cur;
         }

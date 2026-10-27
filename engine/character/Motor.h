@@ -17,7 +17,7 @@ struct HandIntent {
     float effort = 0.5f;       // 0..1 of max arm strength (pressing harder, lifting heavier)
 };
 
-enum class Stance : int { Stand, Crouch, Kneel, Sit, Crawl, Prone, LieBack, LieLeft, LieRight, Count };
+enum class Stance : int { Stand, Crouch, Kneel, Sit, Crawl, Prone, LieBack, LieLeft, LieRight, SitSeat, Count };
 const char* StanceName(Stance s);
 
 struct MotorIntent {
@@ -44,6 +44,7 @@ struct MotorFeedback {
     bool climbing = false;
     Stance stance = Stance::Stand;   // current (or the one she is moving out of)
     bool inTransition = false;
+    bool noSeat = false;             // tried to sit down but there is nothing behind her to sit on
 };
 
 class Motor {
@@ -93,6 +94,7 @@ private:
     Targets StanceTargets(Character& ch, World& world, Stance s, float dt);
     Targets StanceTargetsFlipped(Character& ch, World& world, Stance s, float dt);   // as if turned around (rolling over)
     float LieSurface(World& world, const Vec3& p) const;
+    bool FindSeat(Character& ch, World& world);
     void GaitFeet(Character& ch, World& world, float dt, float stride, float lift, Vec3 out[2]);
     static Targets Blend(const Targets& a, const Targets& b, float w);
     float GroundAt(World& world, const Vec3& p, Vec3* normal = nullptr) const;
@@ -129,6 +131,7 @@ private:
     float trans_ = 1.f, transDur_ = 0.7f;
     float crawlPhase_ = 0.f;
     float supportY_ = 0.f;
+    Vec3 seat_;                          // where her hips go on the chair/bed edge (top surface point)
     bool nextFlip_ = false;              // the stance being moved into faces the other way (rolled over)
     float plantTilt_ = 0.f;              // extra torso pitch so planted hands actually reach the floor (crawl/sit)
 

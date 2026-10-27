@@ -449,6 +449,10 @@ int main(int argc, char** argv) {
         for (float t = 0; t < settle; t += 1 / 60.f) {
             for (const auto& [at, st] : stanceSeq) if (t >= at && t < at + 1 / 60.f) body->intent.stance = static_cast<Stance>(st);
             if (!demoArg.empty()) RunDemo(demoArg, t, world, *body);
+            if (t > 0.25f && t <= 0.25f + 1 / 60.f)   // again once everything has settled (doors hang on hinges made on the first step)
+                for (const std::string& nm : actuateArgs)
+                    for (const Entity& e : world.GetZone().entities)
+                        if (e.name == nm && e.type == "door") world.DebugActuate(e.id, true);
             body->PrePhysics(world, 1 / 60.f);
             world.Advance(1 / 60.f);
             body->Update(1 / 60.f, ambient(), world);

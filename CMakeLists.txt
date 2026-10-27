@@ -73,6 +73,7 @@ add_library(eon_core STATIC
     engine/core/Zone.cpp
     engine/core/World.cpp
     engine/core/World_Matter.cpp
+    engine/core/World_Doors.cpp
     engine/core/World_Scripts.cpp
     engine/core/Physics.cpp)
 target_include_directories(eon_core PUBLIC engine)

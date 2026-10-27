@@ -683,6 +683,35 @@
       }
     },
     {
+      "id": 61,
+      "name": "Fridge",
+      "type": "prefab",
+      "pos": [
+        0.35,
+        0.0,
+        -2.7
+      ],
+      "rot": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        0.1,
+        0.1,
+        0.1
+      ],
+      "color": [
+        0,
+        0,
+        0
+      ],
+      "mass": 0,
+      "params": {
+        "prefab": "fridge"
+      }
+    },
+    {
       "id": 41,
       "name": "Heater",
       "type": "heater",

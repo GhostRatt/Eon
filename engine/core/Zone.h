@@ -53,6 +53,7 @@ struct Zone {
 };
 
 bool IsElectrical(const std::string& type);
+Part MakePart(const Entity& e);   // the circuit part an electrical entity becomes
 
 bool LoadZone(const std::string& path, Zone& out, std::string* error = nullptr);
 

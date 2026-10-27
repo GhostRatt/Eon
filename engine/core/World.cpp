@@ -69,6 +69,16 @@ void World::SetZone(const Zone& zone) {
 
 void World::Reset() {
     StopScripts();
+    // things that appeared while running (vended apples, spawned objects) go; the layout comes back as built
+    {
+        std::vector<int> gone;
+        for (const Entity& e : zone_.entities) if (e.params.value("spawned", false)) gone.push_back(e.id);
+        if (!gone.empty()) {
+            auto isGone = [&](int id) { return std::find(gone.begin(), gone.end(), id) != gone.end(); };
+            zone_.entities.erase(std::remove_if(zone_.entities.begin(), zone_.entities.end(), [&](const Entity& e) { return isGone(e.id); }), zone_.entities.end());
+            zone_.links.erase(std::remove_if(zone_.links.begin(), zone_.links.end(), [&](const TerminalLink& l) { return isGone(l.entityA) || isGone(l.entityB); }), zone_.links.end());
+        }
+    }
     physics_->Clear();
     bodies_.clear();
     terminals_.clear();
@@ -82,6 +92,7 @@ void World::Reset() {
     ++generation_;
     joints_.clear();
     grab_ = {};   // its bodies were removed by Clear()
+    doors_.clear(); colds_.clear();
     taps_.clear(); containers_.clear(); puddles_.clear(); foods_.clear(); heaters_.clear(); streamDraw_.clear();
     bodyStream_ = {}; intake_ = {}; hasMouth_ = mouthOpen_ = false;
 
@@ -150,6 +161,7 @@ void World::BuildEntity(Entity& e) {
     if (e.type == "prefab") return;   // placeholder: its parts are separate entities
     // hidden wires run inside walls: electrical only (ideal links), nothing physical or visible
     if (e.type == "wire" && e.params.value("hidden", false)) return;
+    if (e.params.value("ghost", false)) { BuildDoor(e, -1); return; }   // markers and air volumes: no body, not drawn
     const Quat rot = Quat::FromEulerDeg(e.rotDeg);
     const Vec3 he = e.size * 0.5f;
     const std::string material = e.params.value("material", std::string());
@@ -261,6 +273,7 @@ void World::BuildEntity(Entity& e) {
         switches_.push_back(s);
     }
     BuildMatter(e, main);
+    BuildDoor(e, main);
 }
 
 void World::BuildRope(Entity& wire, const std::vector<std::pair<int, int>>& endLinks) {
@@ -440,6 +453,7 @@ void World::FixedStep(float dt) {
             if (len > d.maxForce) f = f * (d.maxForce / len);
             physics_->AddForce(h, f, p);
         }
+        StepDoors(dt);
         ApplyForces(dt);
         physics_->Step(dt);
         UpdateClips(dt);
@@ -624,6 +638,23 @@ void World::ClearPush() {
 
 void World::DebugActuate(int entityId, bool on) {
     pushes_.erase(std::remove_if(pushes_.begin(), pushes_.end(), [entityId](const PushRt& p) { return p.tag == entityId; }), pushes_.end());
+
+    for (const DoorRt& d : doors_) {
+        // pull it open (on) or push it shut (off) by its free edge, like a hand would
+        const Entity* e = zone_.Find(entityId);
+        if (d.entity != entityId || !e) continue;
+        const bool left = e->params.value("hingeSide", std::string("left")) == "left";
+        Vec3 dp; Quat dq;
+        physics_->GetTransform(bodies_[d.body].h, dp, dq);
+        PushRt p;
+        p.body = d.body;
+        p.local = {(left ? 0.4f : -0.4f) * e->size.x, 0.f, 0.5f * e->size.z};
+        p.force = dq.Rotate(Vec3{0, 0, on ? 1.f : -1.f}) * (3.f * d.seal / (0.9f * e->size.x) + 2.f * e->massKg);
+        p.timeLeft = on ? 0.5f : 1.5f;
+        p.tag = entityId;
+        pushes_.push_back(p);
+        physics_->Wake(bodies_[d.body].h);
+    }
 
     for (const ButtonRt& b : buttons_) {
         if (b.entity != entityId || !on) continue;

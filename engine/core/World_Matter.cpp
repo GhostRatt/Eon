@@ -77,6 +77,8 @@ bool World::ValveOpen(int valveEntity) const {
 
 float World::AirTemperature(const Vec3& p) const {
     float t = zone_.ambientC;
+    for (const ColdRt& c : colds_)
+        if (p.x > c.lo.x && p.x < c.hi.x && p.y > c.lo.y && p.y < c.hi.y && p.z > c.lo.z && p.z < c.hi.z) { t = c.cur; break; }
     for (const HeaterRt& h : heaters_) {
         const Part* part = PartOf(h.entity);
         if (!part || part->power <= 0.01) continue;

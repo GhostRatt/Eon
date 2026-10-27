@@ -650,6 +650,146 @@ static void TestPrefabs(const std::string& contentDir) {
     for (int k = 0; k < 20; ++k) { w4.Advance(0.1); (w4.PartOf(bulb)->brightness > 0.5 ? on : off) = true; }
     CHECK(on && off);
     std::filesystem::remove_all(tmp);
+
+    // whole objects at runtime: from the operator into a world with no scripts yet, and from a script
+    Zone z3;
+    z3.entities = {Ent(1, "Floor", "static", {0, -0.05f, 0}, {8, 0.1f, 8})};
+    World w5;
+    w5.SetContentRoot(contentDir);
+    w5.SetZone(z3);
+    const std::string blink = w5.SpawnObject("timer_light", {1, 0, 0}, 90.f);
+    const int lamp5 = IdNamed(w5, blink + ".Lamp");
+    CHECK(!blink.empty() && lamp5 > 0 && w5.ScriptCount() == 1);
+    on = off = false;
+    for (int k = 0; k < 30; ++k) { w5.Advance(0.1); (w5.PartOf(lamp5)->brightness > 0.5 ? on : off) = true; }
+    CHECK(on && off);
+    CHECK(w5.SpawnObject("nope", {0, 0, 0}).empty());
+    Zone z4 = z3;
+    z4.entities.push_back(Ent(2, "Maker", "static", {0, 0.1f, 0}, {0.1f, 0.1f, 0.1f}, 0,
+        {{"script_src", "function on_start(self) after(0.2, function() world.spawn_object('motion_lamp', -1, 0, 0, 0, {['Sensor.range'] = 3}) end) end"}}));
+    World w6;
+    w6.SetContentRoot(contentDir);
+    w6.SetZone(z4);
+    w6.Advance(0.5);
+    int sensor = 0;
+    for (const Entity& e : w6.GetZone().entities) if (e.name.find(".Sensor") != std::string::npos) sensor = e.id;
+    CHECK(sensor > 0 && w6.GetZone().Find(sensor)->params.value("range", 0.0) == 3.0 && w6.ScriptCount() == 2);
+    CHECK(ZoneToJson(w6.GetZone())["entities"].size() == 2);   // spawned things aren't saved
+    w6.Reset();
+    w6.Advance(0.1);
+    CHECK(w6.GetZone().entities.size() == 2);                  // reset removes them (the script makes a new one later)
+}
+
+// Hinged doors (seal, swing limit, bolt) and fridge air, as objects.
+static void TestDoors(const std::string& contentDir) {
+    Zone z;
+    z.ambientC = 22.f;
+    Entity door = Ent(5, "Front", "prefab", {0, 0, 0}, {0.1f, 0.1f, 0.1f}, 0, {{"prefab", "room_door"}});
+    Entity fridge = Ent(6, "Fridge", "prefab", {2.f, 0, 0}, {0.1f, 0.1f, 0.1f}, 0, {{"prefab", "fridge"}});
+    z.entities = {Ent(1, "Floor", "static", {0, -0.05f, 0}, {8, 0.1f, 8}), door, fridge};
+    World w;
+    w.SetContentRoot(contentDir);
+    w.SetZone(z);
+    const int d = IdNamed(w, "Front.Door"), bolt = IdNamed(w, "Front.Bolt");
+    const int fd = IdNamed(w, "Fridge.Door"), light = IdNamed(w, "Fridge.Light");
+    CHECK(d > 0 && bolt > 0 && fd > 0 && light > 0);
+    w.Advance(0.5);
+    CHECK(w.DoorShut(d) && w.DoorShut(fd));                       // hangs shut, doesn't sag or fall off its hinge
+    const int body = w.MainBodyOf(d);
+    const Vec3 edge{0.4f, 1.0f, 0.095f};                          // front face near the free edge
+    // a light touch doesn't beat the latch
+    w.SetPush(body, edge, {0, 0, 1.f});
+    w.Advance(1.0);
+    CHECK(w.DoorAngle(d) < 3.f);
+    // a real pull opens it, and it stops at its swing limit
+    w.SetPush(body, edge, {0, 0, 15.f});
+    w.Advance(1.0);
+    const float opened = w.DoorAngle(d);
+    w.Advance(3.0);
+    w.ClearPush();
+    const float most = w.DoorAngle(d);
+    std::printf("  door: %.0f deg after 1 s, %.0f deg after 4 s\n", opened, most);
+    CHECK(opened > 15.f && most <= 102.f);
+    CHECK(w.BodyPosition(body).z > 0.2f);                        // it swung toward +z
+    // push it back shut: the latch catches it
+    for (int k = 0; k < 40 && !w.DoorShut(d); ++k) {
+        const Vec3 p = w.BodyPosition(body);
+        w.SetPush(body, p, {0, 0, -6.f});
+        w.Advance(0.1);
+    }
+    w.ClearPush();
+    w.Advance(0.5);
+    CHECK(w.DoorShut(d));
+    // bolt it: now even a hard pull does nothing
+    w.DebugActuate(bolt, true);
+    w.Advance(0.3);
+    CHECK(w.DoorLocked(d));
+    w.SetPush(body, edge, {0, 0, 40.f});
+    w.Advance(1.0);
+    w.ClearPush();
+    CHECK(w.DoorAngle(d) < 2.f);
+    w.DebugActuate(bolt, false);
+    w.Advance(0.3);
+    CHECK(!w.DoorLocked(d));
+    // fridge: cold inside while shut, light off; open it and the light comes on and the air warms up
+    const Vec3 inside{2.f, 0.6f, 0.f};
+    CHECK(w.AirTemperature(inside) < 5.f && w.PartOf(light)->brightness < 0.1);
+    const int fb = w.MainBodyOf(fd);
+    w.SetPush(fb, {2.f - 0.25f, 1.0f, 0.345f}, {0, 0, 14.f});
+    w.Advance(1.0);
+    w.ClearPush();
+    CHECK(w.DoorAngle(fd) > 20.f);
+    CHECK(w.PartOf(light)->brightness > 0.5);
+    w.Advance(120.0);
+    const float warm = w.AirTemperature(inside);
+    std::printf("  fridge: open %.0f deg, inside %.1f C after 2 min open\n", w.DoorAngle(fd), warm);
+    CHECK(warm > 12.f);
+    CHECK(w.AirTemperature({0, 1, 2}) > 21.f);                   // the room isn't cold
+}
+
+// Jenny opens the fridge with her own hand: grips the door's free edge and pulls it round its hinge.
+static void TestOpensFridge(const std::string& contentDir) {
+    Zone z;
+    z.ambientC = 22.f;
+    z.entities = {Ent(1, "Floor", "static", {0, -0.05f, 0}, {8, 0.1f, 8}),
+                  Ent(2, "Fridge", "prefab", {0, 0, 0}, {0.1f, 0.1f, 0.1f}, 0, {{"prefab", "fridge"}})};
+    World w;
+    w.SetContentRoot(contentDir);
+    w.SetZone(z);
+    const int door = IdNamed(w, "Fridge.Door"), light = IdNamed(w, "Fridge.Light");
+    TestJenny j;
+    CHECK(j.Init(w, {-0.3f, 0.f, 0.95f}, 3.14159265f));   // in front of it, a little toward the handle side
+    j.Run(w, 0.5);
+    CHECK(w.DoorShut(door));
+    const Vec3 pivot{0.3f, 1.0f, 0.302f};
+    const float r = 0.56f;
+    int hand = -1;
+    for (int hi = 0; hi < 2 && hand < 0; ++hi) {
+        auto& h = j.in.hands[hi];
+        h.reach = true;
+        h.target = {-0.26f, 1.0f, 0.36f};                  // the front face at the free edge
+        h.effort = 0.7f;
+        j.Run(w, 1.0);
+        h.grip = true;
+        j.Run(w, 0.25);
+        if (j.motor.Feedback().holding[hi]) hand = hi;
+        else { h.grip = false; h.reach = false; j.Run(w, 0.5); }
+    }
+    CHECK(hand >= 0);
+    if (hand < 0) return;
+    auto& h = j.in.hands[hand];
+    for (int k = 1; k <= 40; ++k) {                         // pull round the hinge's arc, out to ~55 degrees
+        const float a = 0.96f * k / 40.f;
+        h.target = pivot + Vec3{-r * std::cos(a), 0.f, r * std::sin(a) + 0.04f};
+        j.Run(w, 0.05);
+    }
+    j.Run(w, 0.3);
+    std::printf("  fridge door %.0f deg, holding %d\n", w.DoorAngle(door), int(j.motor.Feedback().holding[hand]));
+    CHECK(w.DoorAngle(door) > 30.f);
+    CHECK(w.PartOf(light)->brightness > 0.5);
+    h.grip = false;
+    h.reach = false;
+    j.Run(w, 0.5);
 }
 
 static void TestScripts(const std::string& contentDir) {
@@ -1378,6 +1518,8 @@ int main(int argc, char** argv) {
     RUN(TestMatter);
     RUN(TestScripts, content);
     RUN(TestPrefabs, content);
+    RUN(TestDoors, content);
+    RUN(TestOpensFridge, content);
     RUN(TestWaitingAreaNeeds, content);
     RUN(TestMotorPressesButton, content);
     RUN(TestMotorWalksAndStopsAtWall, content);

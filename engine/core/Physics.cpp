@@ -313,6 +313,11 @@ float Physics::HingeAngle(ConstraintHandle c) const {
     return k && k->GetSubType() == JPH::EConstraintSubType::Hinge ? static_cast<JPH::HingeConstraint*>(k)->GetCurrentAngle() : 0.f;
 }
 
+void Physics::SetHingeLimits(ConstraintHandle c, float minAngle, float maxAngle) {
+    auto* k = impl_->Get(c);
+    if (k && k->GetSubType() == JPH::EConstraintSubType::Hinge) static_cast<JPH::HingeConstraint*>(k)->SetLimits(minAngle, maxAngle);
+}
+
 float Physics::ConstraintForce(ConstraintHandle c, float dt) const {
     auto* k = impl_->Get(c);
     if (!k || dt <= 0.f) return 0.f;

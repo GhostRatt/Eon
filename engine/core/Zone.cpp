@@ -23,6 +23,8 @@ double P(const json& params, const char* key, double def) {
     return params.contains(key) && params[key].is_number() ? params[key].get<double>() : def;
 }
 
+} // namespace
+
 Part MakePart(const Entity& e) {
     Part p;
     const json& q = e.params;
@@ -60,8 +62,6 @@ Part MakePart(const Entity& e) {
     }
     return p;
 }
-
-} // namespace
 
 bool IsElectrical(const std::string& type) {
     return type == "battery" || type == "wire" || type == "lamp" || type == "button" ||
@@ -231,7 +231,7 @@ json ZoneToJson(const Zone& zone) {
     j["ambientC"] = zone.ambientC;
     j["entities"] = json::array();
     for (const Entity& e : zone.entities) {
-        if (e.params.contains("_from")) continue;   // prefab parts: re-created from the object file on load
+        if (e.params.contains("_from") || e.params.value("spawned", false)) continue;   // prefab parts, runtime spawns: re-created from the object file on load
         json je;
         je["id"] = e.id;
         je["name"] = e.name;

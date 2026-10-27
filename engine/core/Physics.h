@@ -84,6 +84,7 @@ public:
 
     float SliderPosition(ConstraintHandle c) const;
     float HingeAngle(ConstraintHandle c) const;
+    void SetHingeLimits(ConstraintHandle c, float minAngle, float maxAngle);
     // Magnitude of the force (N) the constraint applied during the last step (fixed/point only)
     float ConstraintForce(ConstraintHandle c, float dt) const;
 

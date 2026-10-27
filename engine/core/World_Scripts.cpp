@@ -146,6 +146,10 @@ int e_push(lua_State* L) {
     if (b >= 0) w->SetPush(b, w->BodyPosition(b), V3(L, 2), 0.05f);
     return 0;
 }
+int e_angle(lua_State* L) { lua_pushnumber(L, W(L)->DoorAngle(IdOf(L, 1))); return 1; }
+int e_shut(lua_State* L) { lua_pushboolean(L, W(L)->DoorShut(IdOf(L, 1))); return 1; }
+int e_set_locked(lua_State* L) { W(L)->SetDoorLocked(IdOf(L, 1), lua_toboolean(L, 2) != 0); return 0; }
+int e_locked(lua_State* L) { lua_pushboolean(L, W(L)->DoorLocked(IdOf(L, 1))); return 1; }
 int e_water(lua_State* L) { lua_pushnumber(L, W(L)->ContainerMl(IdOf(L, 1))); return 1; }
 int e_food_left(lua_State* L) { lua_pushnumber(L, W(L)->FoodLeftG(IdOf(L, 1))); return 1; }
 
@@ -166,6 +170,17 @@ int w_log(lua_State* L) {
     W(L)->ScriptLogLine(s);
     return 0;
 }
+int w_spawn_object(lua_State* L) {
+    // world.spawn_object(name, x, y, z [, yawDeg [, {["Part.key"]=value}]]) -> name of the new object or nil
+    const std::string obj = luaL_checkstring(L, 1);
+    const Vec3 p = V3(L, 2);
+    const float yaw = static_cast<float>(luaL_optnumber(L, 5, 0.0));
+    const nlohmann::json set = lua_istable(L, 6) ? ToJson(L, 6) : nlohmann::json::object();
+    const std::string n = W(L)->SpawnObject(obj, p, yaw, set);
+    if (n.empty()) lua_pushnil(L); else lua_pushstring(L, n.c_str());
+    return 1;
+}
+
 int w_spawn(lua_State* L) {
     // world.spawn(type, x, y, z, {name=, size={x,y,z}, mass=, color={r,g,b}, params={...}})
     Entity e;
@@ -231,9 +246,10 @@ void World::SetEmissive(int id, float e) { emissiveOverride_[id] = e; }
 void World::SetColor(int id, Rgb c) { colorOverride_[id] = c; }
 
 int World::Spawn(Entity e) {
-    if (IsElectrical(e.type)) { ScriptLogLine("spawn: electrical parts can't be added while running (" + e.type + ")"); return 0; }
-    e.id = zone_.NextId();
+    if (e.type == "wire" && !e.params.value("hidden", false)) { ScriptLogLine("spawn: loose wires can't be added while running"); return 0; }
+    if (e.id <= 0 || zone_.Find(e.id)) e.id = zone_.NextId();
     e.params["spawned"] = true;
+    e.part = IsElectrical(e.type) ? circuit_.AddPart(MakePart(e)) : -1;   // the solver rebuilds its nodes every step
     zone_.entities.push_back(e);
     BuildEntity(zone_.entities.back());
     if (L_ && (e.params.contains("script") || e.params.contains("script_src"))) {
@@ -242,6 +258,39 @@ int World::Spawn(Entity e) {
         if (LoadScript(s)) scripts_.push_back(s);
     }
     return e.id;
+}
+
+std::string World::SpawnObject(const std::string& object, const Vec3& pos, float yawDeg, const nlohmann::json& set) {
+    Zone tmp;
+    Entity inst;
+    inst.id = zone_.NextId();
+    inst.name = object + "_" + std::to_string(inst.id);
+    inst.type = "prefab";
+    inst.pos = pos;
+    inst.rotDeg = {0, yawDeg, 0};
+    inst.size = {0.1f, 0.1f, 0.1f};
+    inst.params = {{"prefab", object}, {"set", set}, {"spawned", true}};
+    tmp.entities.push_back(inst);
+    std::string log;
+    if (!ExpandPrefabs(tmp, contentRoot_.empty() ? "content" : contentRoot_, &log)) { ScriptLogLine("spawn_object: " + log); return {}; }
+    zone_.entities.push_back(inst);
+    bool scripted = false;
+    for (const Entity& e : tmp.entities) {
+        if (e.type == "prefab") continue;
+        scripted |= e.params.contains("script") || e.params.contains("script_src");
+        if (!L_) { Entity c = e; c.params["spawned"] = true; c.part = IsElectrical(c.type) ? circuit_.AddPart(MakePart(c)) : -1; zone_.entities.push_back(c); BuildEntity(zone_.entities.back()); }
+        else Spawn(e);   // keeps the part's id, starts its script
+    }
+    for (const TerminalLink& l : tmp.links) {
+        zone_.links.push_back(l);
+        const Entity* a = zone_.Find(l.entityA);
+        const Entity* b = zone_.Find(l.entityB);
+        if (a && b && a->part >= 0 && b->part >= 0) idealLinks_.push_back({a->part, l.termA, b->part, l.termB});
+    }
+    if (!L_ && scripted) StartScripts();   // first scripted thing in the world
+    UpdateSwitchStates();
+    UpdateConnections();
+    return inst.name;
 }
 
 void World::StopScripts() {
@@ -325,7 +374,7 @@ void World::StartScripts() {
     // entity metatable
     luaL_newmetatable(L_, kEntityMeta);
     const luaL_Reg methods[] = {{"name", e_name}, {"type", e_type}, {"pos", e_pos}, {"vel", e_vel}, {"param", e_param}, {"set_param", e_set_param},
-                                {"closed", e_closed}, {"power", e_power}, {"current", e_current}, {"voltage", e_voltage}, {"charge", e_charge},
+                                {"closed", e_closed}, {"angle", e_angle}, {"shut", e_shut}, {"set_locked", e_set_locked}, {"locked", e_locked}, {"power", e_power}, {"current", e_current}, {"voltage", e_voltage}, {"charge", e_charge},
                                 {"set_relay", e_set_relay}, {"set_tap", e_set_tap}, {"set_glow", e_set_glow}, {"set_color", e_set_color},
                                 {"push", e_push}, {"water", e_water}, {"food_left", e_food_left}, {nullptr, nullptr}};
     lua_newtable(L_);
@@ -334,7 +383,7 @@ void World::StartScripts() {
     lua_pop(L_, 1);
     // world table
     const luaL_Reg wf[] = {{"find", w_find}, {"time", w_time}, {"air_temp", w_air_temp}, {"agent_near", w_agent_near},
-                           {"log", w_log}, {"spawn", w_spawn}, {nullptr, nullptr}};
+                           {"log", w_log}, {"spawn", w_spawn}, {"spawn_object", w_spawn_object}, {nullptr, nullptr}};
     lua_newtable(L_);
     luaL_setfuncs(L_, wf, 0);
     lua_setglobal(L_, "world");

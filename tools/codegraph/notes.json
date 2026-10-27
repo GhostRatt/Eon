@@ -30,6 +30,9 @@
  "World::AirTemperature": [
   "heater warmth = W*0.012/(0.25+d^2) C, capped 25 per heater: a 120 W 12 V element is only ~3 C at 45 cm (realistic)"
  ],
+ "World::BuildDoor": [
+  "Door panels must clear the floor (bottom >= ~1 cm): floor friction under a 6 kg door looked like a 3x too-strong seal."
+ ],
  "World::BuildEntity": [
   "buttons mounted flush on another static body get stuck (Jolt contact margin): give the button base a ~5 mm standoff from the surface it sits on"
  ],

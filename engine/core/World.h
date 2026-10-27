@@ -147,6 +147,16 @@ public:
     void SetContentRoot(const std::string& dir) { contentRoot_ = dir; }
     const std::string& ContentRoot() const { return contentRoot_; }
     int Spawn(Entity e);                                  // add a new object at runtime (returns its id)
+    // Places a whole object from content/objects at runtime (scripts, operator tools). Returns the instance's
+    // name ("" on failure); its parts are "<name>.<Part>". Removed again by Reset, like everything spawned.
+    // Doors (type "door"): a dynamic panel on a hinge along one vertical edge. params: hingeSide left|right,
+    // frame (name of what it hangs on; none = the world), swing (deg, 100), seal (N*m holding it shut, magnet/latch),
+    // friction (N*m), locked. Opening swings its free edge toward its local +z (the side it faces).
+    float DoorAngle(int entityId) const;                  // degrees open (0 = shut)
+    bool DoorShut(int entityId) const { return DoorAngle(entityId) < 1.5f; }
+    void SetDoorLocked(int entityId, bool locked);        // a bolt: holds it once it's shut
+    bool DoorLocked(int entityId) const;
+    std::string SpawnObject(const std::string& object, const Vec3& pos, float yawDeg = 0.f, const nlohmann::json& set = nlohmann::json::object());
     void ReloadScripts();                                 // re-read script files (hot reload while running)
     const std::vector<std::string>& ScriptLog() const { return scriptLog_; }
     void ScriptLogLine(const std::string& s);
@@ -249,6 +259,14 @@ private:
     struct PuddleRt { Vec3 pos; float ml[int(Liquid::Count)] = {}; int id = 0; };
     struct FoodRt { int entity = 0, body = -1; float grams = 100.f, left = 100.f, kcalPerG = 0.6f, waterPerG = 0.8f; Vec3 size; bool gone = false; };
     struct HeaterRt { int entity = 0, body = -1; };
+    struct DoorRt { int entity = 0, body = -1; ConstraintHandle hinge = kNoConstraint; bool built = false, locked = false, held = false; float swing = 1.75f, seal = 0.f, friction = 0.3f; Vec3 axisW; };
+    // a closed space with its own air (fridge, freezer, oven): temperature inside its box drifts toward `airC`
+    // while its door is shut and toward the room while it's open
+    struct ColdRt { int entity = 0, door = 0; Vec3 lo, hi; float target = 4.f, cur = 4.f, tauShut = 600.f, tauOpen = 90.f; };
+    void BuildDoor(const Entity& e, int mainBody);
+    void StepDoors(float dt);
+    std::vector<DoorRt> doors_;
+    std::vector<ColdRt> colds_;
     struct StreamRt { Vec3 origin, vel; float rate = 0.f; Liquid kind = Liquid::Water; int fromContainer = -1; bool fromBody = false; };
     struct StreamDraw { std::vector<Vec3> pts; Liquid kind; };
     void BuildMatter(Entity& e, int mainBody);

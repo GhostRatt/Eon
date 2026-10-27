@@ -1,0 +1,13 @@
+{
+  "name": "room_door",
+  "description": "Doorway: a door in a frame that swings out toward +z, with a latch and a bolt on the inner (-z) side that locks it.",
+  "parts": [
+    {"name": "PostL", "type": "static", "pos": [-0.48, 1.03, 0.0], "size": [0.08, 2.06, 0.1], "color": [210, 200, 185]},
+    {"name": "PostR", "type": "static", "pos": [0.48, 1.03, 0.0], "size": [0.08, 2.06, 0.1], "color": [210, 200, 185]},
+    {"name": "Lintel", "type": "static", "pos": [0.0, 2.09, 0.0], "size": [1.04, 0.06, 0.1], "color": [210, 200, 185]},
+    {"name": "Door", "type": "door", "pos": [0.0, 1.01, 0.072], "size": [0.92, 1.98, 0.04], "color": [150, 110, 80], "mass": 18.0,
+     "params": {"hingeSide": "left", "frame": "$PostL", "swing": 100, "seal": 2.0, "friction": 0.6, "script": "scripts/door_bolt.lua", "bolt": "$Bolt"}},
+    {"name": "Bolt", "type": "switch", "pos": [0.4, 1.0, -0.055], "size": [0.02, 0.1, 0.06], "color": [190, 190, 195], "params": {"axis": [0, 0, -1]}}
+  ],
+  "links": []
+}

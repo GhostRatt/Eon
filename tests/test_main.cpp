@@ -357,6 +357,18 @@ static void TestCharacterImport() {
     const Vec3 rest = c2.BonePos(r.breast[0]);
     c2.UpdateSoftTissue(1 / 60.f);
     CHECK(Distance(c2.BonePos(r.breast[0]), rest) < 0.006f);   // settled (just gravity sag)
+
+    // Pressed into a surface (a floor just below the breast bone): the tissue flattens, and recovers when lifted off
+    c2.contactFloorY = c2.BonePos(r.breast[0]).y - 0.01f;
+    for (int f = 0; f < 10; ++f) { ApplyPosture(c2, pp); c2.UpdateSoftTissue(1 / 60.f); }
+    float sq = 1.f;
+    for (const SoftBone& s : c2.SoftBones()) if (s.tag == 2) sq = std::min(sq, s.squash);
+    CHECK(sq < 0.9f);
+    c2.contactFloorY = -1e9f;
+    for (int f = 0; f < 60; ++f) { ApplyPosture(c2, pp); c2.UpdateSoftTissue(1 / 60.f); }
+    sq = 1.f;
+    for (const SoftBone& s : c2.SoftBones()) if (s.tag == 2) sq = std::min(sq, s.squash);
+    CHECK(sq > 0.99f);
 }
 
 static void TestBodyState() {
@@ -584,9 +596,20 @@ static void TestSitOnSeat() {
         const float hip = j.ch.BonePos(r.pelvis).y;
         CHECK(hip > 0.48f && hip < 0.7f);
         CHECK(j.ch.BonePos(r.foot[0]).y < 0.15f && j.ch.BonePos(r.foot[1]).y < 0.15f);
+        // lie down along it (it's 2 m long, like a bed): onto her left side, up on the surface
+        j.in.stance = Stance::LieLeft;
+        j.Run(w, 3.0);
+        CHECK(j.motor.CurrentStance() == Stance::LieLeft);
+        CHECK(j.motor.SupportY() > 0.4f);
+        CHECK(j.ch.BonePos(r.pelvis).y > 0.5f && j.ch.BonePos(r.pelvis).y < 0.85f);
+        CHECK(j.ch.BonePos(r.head).y > 0.5f);                       // head on the bed, not hanging off
+        CHECK(j.ch.BonePos(r.foot[0]).y > 0.45f);                   // legs up on it too
+        // get up: sit up over the edge, then stand on the floor
         j.in.stance = Stance::Stand;
-        j.Run(w, 2.0);
+        j.Run(w, 5.0);
         CHECK(j.motor.CurrentStance() == Stance::Stand);
+        CHECK_NEAR(j.motor.Position().y, 0.0, 0.05);
+        CHECK(j.motor.Position().z > -0.45f);                       // standing in front of it, not on it
         CHECK(j.ch.BonePos(r.pelvis).y > hip + 0.2f);
     }
     {   // nothing behind her: she doesn't sit on thin air

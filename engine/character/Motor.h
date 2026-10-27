@@ -78,7 +78,8 @@ private:
     void EnsureBodies(Character& ch, World& world);
     void StepLocomotion(Character& ch, World& world, const MotorIntent& in, float dt);
     void UpdateHands(Character& ch, World& world, const MotorIntent& in, float dt);
-    void UpdateStance(const MotorIntent& in, float dt);
+    void UpdateStance(Character& ch, World& world, const MotorIntent& in, float dt);
+    bool BedRoom(World& world, const Vec3& dir) const;
     void StartClimb(Character& ch, World& world, const MotorIntent& in);
 
     struct Dims { float thigh = 0.42f, shin = 0.42f, hipH = 0.95f, ankleH = 0.09f, torso = 0.45f, arm = 0.5f; };
@@ -92,7 +93,8 @@ private:
         bool footFollow = false, palmDown[2] = {false, false}, elbowOverride[2] = {false, false};
     };
     Targets StanceTargets(Character& ch, World& world, Stance s, float dt);
-    Targets StanceTargetsFlipped(Character& ch, World& world, Stance s, float dt);   // as if turned around (rolling over)
+    // the stance as it will be after this hop moves/turns her (rolling over, lying down along a bed, sitting up)
+    Targets StanceTargetsAt(Character& ch, World& world, Stance s, float dt, float yaw, const Vec3& pos);
     float LieSurface(World& world, const Vec3& p) const;
     bool FindSeat(Character& ch, World& world);
     void GaitFeet(Character& ch, World& world, float dt, float stride, float lift, Vec3 out[2]);
@@ -132,7 +134,9 @@ private:
     float crawlPhase_ = 0.f;
     float supportY_ = 0.f;
     Vec3 seat_;                          // where her hips go on the chair/bed edge (top surface point)
-    bool nextFlip_ = false;              // the stance being moved into faces the other way (rolled over)
+    bool nextFrame_ = false;             // the stance being moved into has her facing/standing elsewhere
+    float nextYaw_ = 0.f;
+    Vec3 nextPos_;
     float plantTilt_ = 0.f;              // extra torso pitch so planted hands actually reach the floor (crawl/sit)
 
     // climbing

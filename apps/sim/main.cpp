@@ -186,6 +186,7 @@ struct Body {
         motor.PostPhysics(ch, world, posture, dt);
         ch.UpdateLimbCollision(dt);
         wardrobe.Apply(ch);
+        ch.contactFloorY = motor.SupportY();
         ch.UpdateSoftTissue(dt);
         hair.groundY = motor.SupportY();
         hair.Update(ch, dt);
@@ -249,6 +250,7 @@ int main(int argc, char** argv) {
     std::string wearArg;
     bool spawnArg = false, reachArg = false, walkArg = false;
     int stanceArg = -1;
+    std::vector<std::pair<float, int>> stanceSeq;   // --stance-at T S: switch to stance S at settle time T
     bool climbArg = false;
     std::string sayArg;
     float spawn[3] = {0, 0, 0}, reachR[3] = {0, 0, 0}, walkTo[2] = {0, 0};
@@ -273,6 +275,7 @@ int main(int argc, char** argv) {
         else if (arg == "--reach" && a + 3 < argc) { for (float& v : reachR) v = std::stof(argv[++a]); reachArg = true; }
         else if (arg == "--walk" && a + 2 < argc) { for (float& v : walkTo) v = std::stof(argv[++a]); walkArg = true; }
         else if (arg == "--stance" && a + 1 < argc) stanceArg = std::stoi(argv[++a]);
+        else if (arg == "--stance-at" && a + 2 < argc) { const float t = std::stof(argv[++a]); stanceSeq.push_back({t, std::stoi(argv[++a])}); }
         else if (arg == "--say" && a + 1 < argc) sayArg = argv[++a];
         else if (arg == "--climb") climbArg = true;
         else if (arg == "--cam" && a + 6 < argc) { for (float& c : cam) c = std::stof(argv[++a]); customCam = true; }
@@ -329,6 +332,7 @@ int main(int argc, char** argv) {
     if (climbArg) { body->intent.climb = true; body->intent.moveDir = {0, 0, 1}; }
     if (settle > 0.f) {
         for (float t = 0; t < settle; t += 1 / 60.f) {
+            for (const auto& [at, st] : stanceSeq) if (t >= at && t < at + 1 / 60.f) body->intent.stance = static_cast<Stance>(st);
             body->PrePhysics(world, 1 / 60.f);
             world.Advance(1 / 60.f);
             body->Update(1 / 60.f, ambient(), world);

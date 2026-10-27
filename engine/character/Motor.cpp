@@ -55,14 +55,15 @@ const std::vector<std::vector<Stance>>& StanceGraph() {
         /*Crawl */ {Stance::Kneel, Stance::Prone},
         /*Prone */ {Stance::Crawl, Stance::LieLeft, Stance::LieRight},
         /*Back  */ {Stance::Sit, Stance::LieLeft, Stance::LieRight},
-        /*Left  */ {Stance::LieBack, Stance::Prone},
-        /*Right */ {Stance::LieBack, Stance::Prone},
-        /*Seat  */ {Stance::Stand},
+        /*Left  */ {Stance::LieBack, Stance::Prone, Stance::SitSeat},
+        /*Right */ {Stance::LieBack, Stance::Prone, Stance::SitSeat},
+        /*Seat  */ {Stance::Stand, Stance::LieLeft, Stance::LieRight},
     };
     return g;
 }
 
-Stance NextHop(Stance from, Stance to) {
+template <class Allow>
+Stance NextHop(Stance from, Stance to, Allow allow) {
     if (from == to) return to;
     const auto& g = StanceGraph();
     const int n = static_cast<int>(Stance::Count);
@@ -72,7 +73,7 @@ Stance NextHop(Stance from, Stance to) {
     for (size_t k = 0; k < q.size(); ++k) {
         for (Stance nb : g[q[k]]) {
             const int v = static_cast<int>(nb);
-            if (prev[v] >= 0) continue;
+            if (prev[v] >= 0 || !allow(static_cast<Stance>(q[k]), nb)) continue;
             prev[v] = q[k];
             q.push_back(v);
         }
@@ -95,6 +96,7 @@ float HopDuration(Stance a, Stance b) {
     if (is(Stance::LieBack, Stance::LieLeft) || is(Stance::LieBack, Stance::LieRight)) return 1.0f;
     if (is(Stance::Prone, Stance::LieLeft) || is(Stance::Prone, Stance::LieRight)) return 1.0f;
     if (is(Stance::Stand, Stance::SitSeat)) return 1.1f;
+    if (is(Stance::SitSeat, Stance::LieLeft) || is(Stance::SitSeat, Stance::LieRight)) return 1.6f;   // legs swing up onto the bed
     return 0.8f;
 }
 
@@ -210,24 +212,87 @@ void Motor::EnsureBodies(Character& ch, World& world) {
     }
 }
 
-void Motor::UpdateStance(const MotorIntent& in, float dt) {
+bool Motor::BedRoom(World& world, const Vec3& dir) const {
+    // is the seat she's on long enough to lie down along `dir` (head that way, legs the other)?
+    auto at = [&](float s) {
+        const Vec3 p = seat_ + dir * s;
+        RayHit h;
+        return world.RayCast(Vec3{p.x, seat_.y + 0.4f, p.z}, {0, -1, 0}, 0.5f, h, true) && std::fabs(h.point.y - seat_.y) < 0.1f;
+    };
+    return at(0.3f) && at(0.6f) && at(0.85f) && at(-0.3f) && at(-0.5f);
+}
+
+void Motor::UpdateStance(Character& ch, World& world, const MotorIntent& in, float dt) {
     if (climbing_) return;
     if (trans_ >= 1.f && stance_ != in.stance) {
-        next_ = NextHop(stance_, in.stance);
+        const Vec3 F = ch.placement.r.Rotate({0, 0, 1});
+        const Vec3 L = Vec3{0, 1, 0}.Cross(F).Normalized({1, 0, 0});
+        const bool raised = Lying() && supportY_ > pos_.y + 0.25f;   // lying on a bed, not the floor
+        bool bed[2] = {false, false};
+        if (stance_ == Stance::SitSeat) { bed[0] = BedRoom(world, L); bed[1] = BedRoom(world, L * -1.f); }
+        auto allow = [&](Stance a, Stance b) {
+            auto is = [&](Stance x, Stance y) { return a == x && b == y; };
+            if (is(Stance::SitSeat, Stance::LieLeft)) return stance_ == Stance::SitSeat && bed[0];
+            if (is(Stance::SitSeat, Stance::LieRight)) return stance_ == Stance::SitSeat && bed[1];
+            if (b == Stance::SitSeat && (a == Stance::LieLeft || a == Stance::LieRight)) return raised;
+            // up on a bed she gets off over the edge, not by standing up on the mattress
+            if (raised && (is(Stance::LieBack, Stance::Sit) || is(Stance::Prone, Stance::Crawl))) return false;
+            return true;
+        };
+        next_ = NextHop(stance_, in.stance, allow);
         if (next_ != stance_) {
-            transDur_ = HopDuration(stance_, next_);
-            trans_ = 0.f;
+            nextFrame_ = false;
+            bool ok = true;
             const int a = HeadSign(stance_), b = HeadSign(next_);
-            nextFlip_ = a != 0 && b != 0 && a != b;
+            if (a != 0 && b != 0 && a != b && !(stance_ == Stance::SitSeat || next_ == Stance::SitSeat)) {
+                // rolling over keeps the head in place: afterwards she faces the other way
+                nextFrame_ = true; nextYaw_ = WrapAngle(yaw_ + kPi); nextPos_ = pos_;
+            } else if (stance_ == Stance::SitSeat && (next_ == Stance::LieLeft || next_ == Stance::LieRight)) {
+                // lie down along the bed: head toward that side, legs swing up, hips stay on the seat
+                const float d = next_ == Stance::LieLeft ? 1.f : -1.f;
+                nextFrame_ = true; nextYaw_ = WrapAngle(yaw_ - d * kPi * 0.5f);
+                // and shuffle back onto it a little (not right on the edge) if it's deep enough
+                Vec3 in = seat_ - F * 0.22f;
+                RayHit dh;
+                if (!world.RayCast(Vec3{in.x, seat_.y + 0.4f, in.z}, {0, -1, 0}, 0.5f, dh, true) || std::fabs(dh.point.y - seat_.y) > 0.1f) in = seat_;
+                nextPos_ = Vec3{in.x, pos_.y, in.z};
+            } else if (next_ == Stance::SitSeat && (stance_ == Stance::LieLeft || stance_ == Stance::LieRight)) {
+                // sit up over the edge her front faces: find that edge
+                const float d = stance_ == Stance::LieLeft ? 1.f : -1.f;
+                const Vec3 C = L * d;
+                const Vec3 P = ch.BonePos(ch.Rig().pelvis);
+                ok = false;
+                for (float s = 0.1f; s <= 0.9f; s += 0.05f) {
+                    const Vec3 q = P + C * s;
+                    RayHit h;
+                    const bool hit = world.RayCast(Vec3{q.x, supportY_ + 0.3f, q.z}, {0, -1, 0}, 0.5f, h, true);
+                    if (!hit || h.point.y < supportY_ - 0.12f) {
+                        seat_ = Vec3{P.x, supportY_, P.z} + C * std::max(0.05f, s - 0.14f);
+                        const Vec3 st = P + C * (s + 0.14f);
+                        nextFrame_ = true;
+                        nextYaw_ = WrapAngle(yaw_ + d * kPi * 0.5f);
+                        nextPos_ = Vec3{st.x, GroundAt(world, Vec3{st.x, pos_.y, st.z}), st.z};
+                        ok = true;
+                        break;
+                    }
+                }
+            }
+            if (ok) {
+                transDur_ = HopDuration(stance_, next_);
+                trans_ = 0.f;
+            } else {
+                next_ = stance_;
+                fb_.noSeat = true;
+            }
         }
     }
     if (trans_ < 1.f) {
         trans_ = std::min(1.f, trans_ + dt / transDur_);
         if (trans_ >= 1.f) {
             stance_ = next_;
-            // rolled over: she now faces the other way (same pose, described from her new facing)
-            if (nextFlip_) yaw_ = WrapAngle(yaw_ + kPi);
-            nextFlip_ = false;
+            // the move turned/moved her (rolled over, lay down along the bed, sat up): same pose, new reference
+            if (nextFrame_) { yaw_ = nextYaw_; pos_ = nextPos_; vel_ = {}; }
+            nextFrame_ = false;
         }
     }
     fb_.stance = stance_;
@@ -238,14 +303,15 @@ void Motor::PrePhysics(Character& ch, World& world, const MotorIntent& in, float
     EnsureBodies(ch, world);
     // sitting down needs something behind her to sit on (feel for it before committing)
     MotorIntent want = in;
-    if (in.stance == Stance::SitSeat && stance_ != Stance::SitSeat && trans_ >= 1.f) {
+    const bool onBed = Lying() && supportY_ > pos_.y + 0.25f;
+    if (in.stance == Stance::SitSeat && stance_ != Stance::SitSeat && trans_ >= 1.f && !onBed) {
         if (stance_ != Stance::Stand) want.stance = Stance::Stand;
         else if (!FindSeat(ch, world)) { want.stance = Stance::Stand; fb_.noSeat = true; }
         else fb_.noSeat = false;
     } else if (in.stance != Stance::SitSeat) {
         fb_.noSeat = false;
     }
-    UpdateStance(want, dt);
+    UpdateStance(ch, world, want, dt);
     if (in.climb && !climbing_ && stance_ == Stance::Stand && trans_ >= 1.f) StartClimb(ch, world, in);
     StepLocomotion(ch, world, in, dt);
     UpdateHands(ch, world, in, dt);
@@ -629,9 +695,9 @@ Motor::Targets Motor::StanceTargets(Character& ch, World& world, Stance st, floa
     case Stance::Prone: {
         // flat on the front, propped on the forearms; army crawl pulls with alternating elbows and knees
         if (speed > 0.02f) crawlPhase_ += dt * (0.6f + 1.2f * sf);
-        const Vec3 hip = Vec3{P0.x, g + 0.11f, P0.z};
+        const Vec3 hip = Vec3{P0.x, g + 0.09f, P0.z};   // belly on the floor
         t.pelvisOffset = hip - P0;
-        const Quat tilt = Quat::AxisAngle(L, kPi * 0.5f - 0.17f);   // chest propped up a little on the forearms
+        const Quat tilt = Quat::AxisAngle(L, kPi * 0.5f - 0.09f);   // chest resting on the floor (breasts flatten under her)
         t.tilt = tilt;
         t.footFollow = true;
         t.headPitch = 0.9f;
@@ -657,7 +723,7 @@ Motor::Targets Motor::StanceTargets(Character& ch, World& world, Stance st, floa
         // on her back, arms by her sides; this is how she sleeps
         const float surf = LieSurface(world, P0);
         t.floorY = surf;
-        const Vec3 hip = Vec3{P0.x, surf + 0.115f, P0.z};
+        const Vec3 hip = Vec3{P0.x, surf + 0.1f, P0.z};   // back and shoulder blades on the surface, bottom flattened
         t.pelvisOffset = hip - P0;
         const Quat tilt = Quat::AxisAngle(L, -(kPi * 0.5f - 0.04f));
         t.tilt = tilt;
@@ -791,16 +857,20 @@ float Motor::LieSurface(World& world, const Vec3& p) const {
     return surf;
 }
 
-Motor::Targets Motor::StanceTargetsFlipped(Character& ch, World& world, Stance st, float dt) {
-    // evaluate the stance as if she faced the other way, then express it for her current facing
+Motor::Targets Motor::StanceTargetsAt(Character& ch, World& world, Stance st, float dt, float yaw, const Vec3& pos) {
+    // evaluate the stance with her turned/moved, then express it for her current placement
     const Transform keep = ch.placement;
+    const Vec3 keepPos = pos_;
     const Vec3 P0real = ch.BindPos(ch.Rig().pelvis);
-    ch.placement.r = Quat::AxisAngle({0, 1, 0}, yaw_ + kPi);
-    const Vec3 P0flip = ch.BindPos(ch.Rig().pelvis);
+    ch.placement.r = Quat::AxisAngle({0, 1, 0}, yaw);
+    ch.placement.t = pos + Vec3{0, ch.floorOffset, 0};
+    pos_ = pos;
+    const Vec3 P0at = ch.BindPos(ch.Rig().pelvis);
     Targets t = StanceTargets(ch, world, st, dt);
     ch.placement = keep;
-    t.pelvisOffset = t.pelvisOffset + (P0flip - P0real);
-    t.tilt = (t.tilt * Quat::AxisAngle({0, 1, 0}, kPi)).Normalized();
+    pos_ = keepPos;
+    t.pelvisOffset = t.pelvisOffset + (P0at - P0real);
+    t.tilt = (t.tilt * Quat::AxisAngle({0, 1, 0}, WrapAngle(yaw - yaw_))).Normalized();
     return t;
 }
 
@@ -841,7 +911,7 @@ void Motor::PostPhysics(Character& ch, World& world, PostureParams base, float d
     } else {
         Targets cur = StanceTargets(ch, world, stance_, dt);
         if (trans_ < 1.f) {
-            Targets nxt = nextFlip_ ? StanceTargetsFlipped(ch, world, next_, dt) : StanceTargets(ch, world, next_, dt);
+            Targets nxt = nextFrame_ ? StanceTargetsAt(ch, world, next_, dt, nextYaw_, nextPos_) : StanceTargets(ch, world, next_, dt);
             tg = Blend(cur, nxt, Smooth(trans_));
             // getting up/down: the chest goes forward over the feet mid-move (weight over the base of support)
             auto pair = [&](Stance a, Stance b) { return (stance_ == a && next_ == b) || (stance_ == b && next_ == a); };

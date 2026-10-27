@@ -465,6 +465,23 @@ void Character::SetupSoftBones() {
                     if (m.joints[v][k] == bone && m.weights[v][k] > 0.3f) { cen += m.pos[v]; ++n; break; }
         }
         Vec3 d = n > 0 ? cen * (1.f / n) - bw[bone].t : Vec3{0, 0, 0.06f};
+        // skin of this tissue (and its child bones, e.g. the nipple) for floor contact
+        {
+            std::vector<int> own = {bone};
+            for (int c : children_[bone]) own.push_back(c);
+            std::vector<Vec3> all;
+            for (const SkinMesh& m : asset_->meshes) {
+                if (m.garment >= 0) continue;
+                for (size_t v = 0; v < m.pos.size(); ++v)
+                    for (int k = 0; k < 4; ++k)
+                        if (m.weights[v][k] > 0.45f && std::find(own.begin(), own.end(), (int)m.joints[v][k]) != own.end()) {
+                            all.push_back(asset_->bones[bone].invBind.Point(m.pos[v]));
+                            break;
+                        }
+            }
+            const size_t stepS = std::max<size_t>(1, all.size() / 160);
+            for (size_t k = 0; k < all.size(); k += stepS) s.samples.push_back(all[k]);
+        }
         if (d.Length() < 0.01f) d = d.Normalized({0, 0, 1}) * 0.06f;
         s.length = std::clamp(d.Length() * 1.3f, 0.03f, 0.15f);
         s.localDir = bw[bone].r.Conjugate().Rotate(d.Normalized());
@@ -569,6 +586,40 @@ void Character::UpdateSoftTissue(float dt) {
         RecomputeSubtree(s.bone);
         const Quat q = Quat::FromTo(dirW * s.length, dirW * s.length + disp);
         RotateBoneWorld(s.bone, Nlerp(Quat{}, q, s.rotScale));
+    }
+    ApplyTissueContact(dt);
+}
+
+void Character::ApplyTissueContact(float dt) {
+    // Pressed into the floor/bed, tissue flattens against the body and spreads out (volume kept roughly constant).
+    // Squash is about the bone origin at the chest wall / hip, along whichever bone axis points most at the surface.
+    const float k = std::clamp(dt * 25.f, 0.f, 1.f);
+    for (SoftBone& s : soft_) {
+        float want = 1.f;
+        int axis = 1;
+        if (!s.samples.empty() && contactFloorY > -1e8f) {
+            const Mat4 M = Mat4::FromTransform(world_[s.bone]);
+            float lo = 1e9f;
+            for (const Vec3& p : s.samples) lo = std::min(lo, M.Point(p).y);
+            const float boneY = world_[s.bone].t.y;
+            const float surf = contactFloorY + 0.004f;
+            if (lo < surf && boneY - lo > 1e-3f) want = std::clamp((boneY - surf) / (boneY - lo), 0.3f, 1.f);
+            const Vec3 upL = world_[s.bone].r.Conjugate().Rotate({0, 1, 0});
+            const float a[3] = {std::fabs(upL.x), std::fabs(upL.y), std::fabs(upL.z)};
+            axis = a[0] > a[1] ? (a[0] > a[2] ? 0 : 2) : (a[1] > a[2] ? 1 : 2);
+        }
+        // squash instantly when pressed harder (the floor is solid), recover with a little lag
+        s.squash = want < s.squash ? want : s.squash + (want - s.squash) * k;
+        s.pressure = std::clamp((1.f - s.squash) / 0.5f, 0.f, 1.f);
+        if (s.squash > 0.999f) continue;
+        const float spread = std::min(1.35f, 1.f / std::sqrt(s.squash));
+        Vec3 sc{spread, spread, spread};
+        (axis == 0 ? sc.x : axis == 1 ? sc.y : sc.z) = s.squash;
+        Vec3& ls = local_[s.bone].s;
+        ls = Vec3{ls.x * sc.x, ls.y * sc.y, ls.z * sc.z};
+        RecomputeSubtree(s.bone);
+        // the spring's mass point can't sit inside the floor either
+        if (s.vel.y < 0.f) s.vel.y *= 0.3f;
     }
 }
 

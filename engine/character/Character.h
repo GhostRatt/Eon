@@ -44,6 +44,10 @@ struct SoftBone {
     // runtime
     Vec3 pos, vel, lastRest;
     bool valid = false;
+    // contact: skin points (bone frame) used to flatten the tissue against a floor/bed it is pressed into
+    std::vector<Vec3> samples;
+    float squash = 1.f;         // 1 = free, <1 = flattened along the contact direction
+    float pressure = 0.f;       // 0..1 how hard it is pressed (felt)
 };
 
 class Character {
@@ -93,6 +97,7 @@ public:
     std::vector<BodyCapsule>& Capsules() { return capsules_; }
     std::vector<SoftBone>& SoftBones() { return soft_; }
     void SetSupport(int tag, float s);                 // 2 breast, 3 glute
+    float contactFloorY = -1e9f;                       // surface her body rests on (floor/bed): soft tissue flattens on it
 
     // ---- Morphs ----
     void SetMorph(const std::string& name, float weight);
@@ -114,6 +119,7 @@ private:
     void FitCapsules();
     void SetupSoftBones();
     void SetupHands();
+    void ApplyTissueContact(float dt);
     struct HandFrame {
         bool valid = false;
         Vec3 palmLocal, fingerLocal;           // in the hand bone's frame

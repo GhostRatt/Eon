@@ -126,8 +126,10 @@ bool Character::Init(const CharacterAsset* asset) {
         fwd = fwd.Normalized();
         modelYaw = -std::atan2(fwd.x, fwd.z);   // rotate so forward maps to +Z
     }
-    // Feet on the floor
-    placement.t = {0, -lo, 0};
+    // Feet on the floor: lowest skin point, or the lowest bone if the mesh is only part of the body
+    float boneLo = 1e9f;
+    for (const Transform& w : world_) boneLo = std::min(boneLo, w.t.y);
+    placement.t = {0, -std::min(lo, boneLo), 0};
 
     ResetPose();
     FitCapsules();

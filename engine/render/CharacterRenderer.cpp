@@ -1,6 +1,7 @@
 #include "CharacterRenderer.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <filesystem>
 #include <unordered_map>
@@ -71,44 +72,57 @@ std::string Lower(std::string s) {
 
 } // namespace
 
-Texture2D CharacterRenderer::LoadTex(const std::string& path, const std::string& fbxDir, const std::vector<std::string>& dirs) {
-    if (path.empty()) return Texture2D{};
+std::string CharacterRenderer::FindFile(const std::string& path, const std::string& fbxDir, const std::vector<std::string>& dirs) {
+    if (path.empty()) return {};
     std::string p = path;
     std::replace(p.begin(), p.end(), '\\', '/');
-    std::vector<fs::path> tries = {fs::path(p), fs::path(fbxDir) / p};
     const std::string base = fs::path(p).filename().string();
+    std::vector<fs::path> tries = {fs::path(p), fs::path(fbxDir) / p, fs::path(fbxDir) / base};
     for (const std::string& d : dirs) tries.push_back(fs::path(d) / base);
-
     for (const fs::path& t : tries) {
         std::error_code ec;
-        if (fs::exists(t, ec)) {
-            Texture2D tex = LoadTexture(t.string().c_str());
-            if (tex.id) {
-                GenTextureMipmaps(&tex);
-                SetTextureFilter(tex, TEXTURE_FILTER_TRILINEAR);
-                ++loadedTextures_;
-                return tex;
-            }
-        }
+        if (fs::is_regular_file(t, ec)) return t.string();
     }
-    // case-insensitive file name search in the texture dirs (Windows-made assets on any OS)
+    // case-insensitive name search (Windows-made assets on any OS)
     const std::string want = Lower(base);
     for (const std::string& d : dirs) {
         std::error_code ec;
-        for (const auto& e : fs::recursive_directory_iterator(d, ec)) {
-            if (e.is_regular_file() && Lower(e.path().filename().string()) == want) {
-                Texture2D tex = LoadTexture(e.path().string().c_str());
-                if (tex.id) {
-                    GenTextureMipmaps(&tex);
-                    SetTextureFilter(tex, TEXTURE_FILTER_TRILINEAR);
-                    ++loadedTextures_;
-                    return tex;
-                }
-            }
+        for (const auto& e : fs::recursive_directory_iterator(d, fs::directory_options::skip_permission_denied, ec))
+            if (e.is_regular_file(ec) && Lower(e.path().filename().string()) == want) return e.path().string();
+    }
+    return {};
+}
+
+Texture2D CharacterRenderer::LoadTex(const std::string& path, const std::string& fbxDir, const std::vector<std::string>& dirs,
+                                     const std::string& opacityPath) {
+    const std::string file = FindFile(path, fbxDir, dirs);
+    if (file.empty()) {
+        if (!path.empty()) missing_.push_back(path);
+        return Texture2D{};
+    }
+    Image img = LoadImage(file.c_str());
+    if (!img.data) { missing_.push_back(path); return Texture2D{}; }
+    ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+    if (!opacityPath.empty()) {
+        const std::string of = FindFile(opacityPath, fbxDir, dirs);
+        Image mask = of.empty() ? Image{} : LoadImage(of.c_str());
+        if (mask.data) {
+            if (mask.width != img.width || mask.height != img.height) ImageResize(&mask, img.width, img.height);
+            ImageFormat(&mask, PIXELFORMAT_UNCOMPRESSED_GRAYSCALE);
+            ImageAlphaMask(&img, mask);
+            UnloadImage(mask);
+        } else {
+            missing_.push_back(opacityPath);
         }
     }
-    missing_.push_back(path);
-    return Texture2D{};
+    Texture2D tex = LoadTextureFromImage(img);
+    UnloadImage(img);
+    if (tex.id) {
+        GenTextureMipmaps(&tex);
+        SetTextureFilter(tex, TEXTURE_FILTER_TRILINEAR);
+        ++loadedTextures_;
+    }
+    return tex;
 }
 
 bool CharacterRenderer::Init(const Character& ch, const std::vector<std::string>& textureDirs) {
@@ -124,15 +138,31 @@ bool CharacterRenderer::Init(const Character& ch, const std::vector<std::string>
 
     const std::string fbxDir = fs::path(a.sourcePath).parent_path().string();
     mats_.resize(a.materials.size());
+    auto stripSuffix = [](std::string n) {
+        const size_t dot = n.rfind('.');
+        if (dot != std::string::npos && dot + 1 < n.size() &&
+            std::all_of(n.begin() + dot + 1, n.end(), [](char c) { return std::isdigit(static_cast<unsigned char>(c)); }))
+            n = n.substr(0, dot);
+        return n;
+    };
     for (size_t i = 0; i < a.materials.size(); ++i) {
         const MaterialInfo& mi = a.materials[i];
-        mats_[i].albedo = LoadTex(mi.baseColorTex, fbxDir, textureDirs);
+        auto ov = overrides.find(stripSuffix(mi.name));
+        const MaterialOverride* o = ov != overrides.end() ? &ov->second : nullptr;
+        mats_[i].hidden = o && o->hidden;
+        if (mats_[i].hidden) continue;
+        const std::string baseTex = o && !o->baseColor.empty() ? o->baseColor : mi.baseColorTex;
+        mats_[i].albedo = LoadTex(baseTex, fbxDir, textureDirs, o ? o->opacity : std::string());
         mats_[i].hasAlbedo = mats_[i].albedo.id != 0;
         if (!mats_[i].hasAlbedo) {
             auto c = [](float v) { return static_cast<unsigned char>(std::clamp(v, 0.f, 1.f) * 255.f); };
             mats_[i].tint = {c(mi.baseColor.x), c(mi.baseColor.y), c(mi.baseColor.z), 255};
         } else {
             mats_[i].tint = WHITE;
+        }
+        if (o && o->hasColor) {
+            auto c = [](float v) { return static_cast<unsigned char>(std::clamp(v, 0.f, 1.f) * 255.f); };
+            mats_[i].tint = {c(o->color.x), c(o->color.y), c(o->color.z), 255};
         }
     }
 
@@ -233,6 +263,7 @@ void CharacterRenderer::Draw(const RenderFrame& lighting, const Camera3D& cam, f
     rlDisableBackfaceCulling();   // thin clothing and hair are often single-sided
     for (const Chunk& c : chunks_) {
         if (!visible_[c.assetMesh]) continue;
+        if (c.material >= 0 && c.material < (int)mats_.size() && mats_[c.material].hidden) continue;
         int useTex = 0;
         if (c.material >= 0 && c.material < (int)mats_.size()) {
             const Mat& m = mats_[c.material];

@@ -1,7 +1,16 @@
 {
   "name": "Jenny",
-  "fbx": "source/FBX/Primrose_Nude.fbx",
-  "textureDirs": ["source/Textures", "source/Assets/Textures", "source"],
+  "fbx": "../../../../Assets for Claude/RyanReos_PrimroseDeluxe_FullArchive/RyanReos_Primrose_Deluxe/FBX/Primrose_FullNude.fbx",
+  "textureDirs": [
+    "../../../../Assets for Claude/RyanReos_PrimroseDeluxe_FullArchive/RyanReos_Primrose_Deluxe/Assets/Textures",
+    "source/Textures"
+  ],
+  "materials": {
+    "Primrose_Hair": { "baseColor": "Primrose_Hair_basecolor.tga", "opacity": "Primrose_Hair_opacity.tga" },
+    "Primrose_Pubes": { "baseColor": "Primrose_Hair_basecolor.tga", "opacity": "Primrose_Hair_opacity.tga", "color": [0.35, 0.25, 0.2] },
+    "Primrose_Eyes_Cornea": { "hidden": true },
+    "Primrose_Eyeshadow": { "hidden": true }
+  },
   "spawn": [0.0, 0.0, 0.3],
   "yaw": 0,
   "targetHeight": 0

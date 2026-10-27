@@ -63,8 +63,9 @@ public:
     // Rotates a bone (world-space delta) and refreshes world transforms of its subtree.
     void RotateBoneWorld(int bone, const Quat& delta);
 
-    // Two-bone IK: places `end` at target, bending `mid` toward pole. Keeps end's world rotation.
-    void SolveTwoBone(int a, int b, int c, const Vec3& target, const Vec3& pole, float weight = 1.f);
+    // Two-bone IK: places `end` at target, bending `mid` toward pole.
+    // keepEndWorld: true keeps the end bone's world rotation (feet flat), false lets it follow the limb (relaxed hands).
+    void SolveTwoBone(int a, int b, int c, const Vec3& target, const Vec3& pole, float weight = 1.f, bool keepEndWorld = true);
 
     // ---- Physical layers (run after the animated pose) ----
     void UpdateLimbCollision(float dt);                // hands/forearms/elbows stay on the skin

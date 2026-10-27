@@ -95,7 +95,8 @@ void ApplyPosture(Character& ch, const PostureParams& p) {
         switch (p.motion) {
         case TestMotion::HandsOnChest: {
             const Vec3 chest = top >= 0 ? ch.BonePos(top) : sh;
-            target = chest + fwd * 0.12f + left * (sideSign * 0.06f) + Vec3{0, -0.05f, 0};
+            // aim slightly into the upper chest; limb collision stops the palm on the skin
+            target = chest + fwd * 0.04f + left * (sideSign * 0.05f) + Vec3{0, 0.07f, 0};
             pole = sh + left * (sideSign * 0.3f) + Vec3{0, -0.4f, 0};
             break;
         }
@@ -116,7 +117,9 @@ void ApplyPosture(Character& ch, const PostureParams& p) {
             pole = sh + Vec3{0, -0.3f, 0} - fwd * 0.5f + left * (sideSign * 0.1f);
             break;
         }
-        ch.SolveTwoBone(a, b, c, target, pole);
+        // relaxed arms: hands follow the forearm; contact poses keep the palm orientation
+        const bool relaxed = p.motion != TestMotion::HandsOnChest && p.motion != TestMotion::HandsOnHips && p.motion != TestMotion::ArmsCrossed;
+        ch.SolveTwoBone(a, b, c, target, pole, 1.f, !relaxed);
     }
 }
 

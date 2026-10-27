@@ -171,7 +171,7 @@ void Character::RotateBoneWorld(int bone, const Quat& delta) {
     RecomputeSubtree(bone);
 }
 
-void Character::SolveTwoBone(int a, int b, int c, const Vec3& target, const Vec3& pole, float weight) {
+void Character::SolveTwoBone(int a, int b, int c, const Vec3& target, const Vec3& pole, float weight, bool keepEndWorld) {
     if (a < 0 || b < 0 || c < 0 || weight <= 0.f) return;
     const Quat endRot = world_[c].r;
     const Vec3 A = world_[a].t, B = world_[b].t, C = world_[c].t;
@@ -195,6 +195,7 @@ void Character::SolveTwoBone(int a, int b, int c, const Vec3& target, const Vec3
     RotateBoneWorld(a, Quat::FromTo(B - A, Bn - A));
     RotateBoneWorld(b, Quat::FromTo(world_[c].t - world_[b].t, A + n * d - world_[b].t));
 
+    if (!keepEndWorld) return;
     // Keep the hand/foot orientation the animation gave it
     const int pc = asset_->bones[c].parent;
     local_[c].r = (world_[pc].r.Conjugate() * endRot).Normalized();

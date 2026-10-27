@@ -52,8 +52,21 @@ struct Body {
         std::vector<std::string> texDirs;
         const fs::path base = cfgPath.parent_path();
         if (fbx.empty() && cfg.contains("fbx")) fbx = (base / cfg["fbx"].get<std::string>()).string();
-        for (const auto& d : cfg.value("textureDirs", nlohmann::json::array())) texDirs.push_back((base / d.get<std::string>()).string());
+        const nlohmann::json dirs = cfg.value("textureDirs", nlohmann::json::array());
+        for (const auto& d : dirs) texDirs.push_back((base / d.get<std::string>()).string());
         texDirs.push_back((base / "source").string());
+        const nlohmann::json mats = cfg.value("materials", nlohmann::json::object());
+        for (const auto& [name, m] : mats.items()) {
+            MaterialOverride o;
+            o.baseColor = m.value("baseColor", std::string());
+            o.opacity = m.value("opacity", std::string());
+            o.hidden = m.value("hidden", false);
+            if (m.contains("color") && m["color"].is_array() && m["color"].size() == 3) {
+                o.hasColor = true;
+                o.color = {m["color"][0].get<float>(), m["color"][1].get<float>(), m["color"][2].get<float>()};
+            }
+            gfx.overrides[name] = o;
+        }
         if (fbx.empty() || !fs::exists(fbx)) {
             info = "Jenny model not found (" + (fbx.empty() ? cfgPath.string() : fbx) + "), using stand-in rig";
             fbx = std::string(EON_CONTENT_DIR) + "/../tests/data/test_rig.fbx";

@@ -47,6 +47,7 @@ const PartDef kParts[] = {
     {"tap", {0.03f, 0.02f, 0.03f}, 0.f, {200, 210, 220}, R"({"valve":"script","rate":45,"speed":0.3})"},
     {"container", {0.075f, 0.1f, 0.075f}, 0.15f, {235, 235, 230}, R"({"capacity":300})"},
     {"bowl", {0.3f, 0.12f, 0.3f}, 0.f, {240, 240, 240}, R"({"capacity":3000})"},
+    {"door", {0.8f, 1.95f, 0.04f}, 15.f, {150, 110, 80}, R"({"hingeSide":"left","swing":100,"seal":2,"friction":0.5})"},
     {"food", {0.075f, 0.075f, 0.075f}, 0.15f, {190, 40, 40}, R"({"grams":150,"kcalPerG":0.52,"waterPerG":0.85})"},
 };
 
@@ -212,7 +213,7 @@ int main(int argc, char** argv) {
             e.name[0] = static_cast<char>(std::toupper(e.name[0]));
             e.size = d.size; e.massKg = d.mass; e.color = d.color;
             e.params = json::parse(d.params);
-            e.pos = {at.x, at.y + 0.5f * d.size.y + 0.002f, at.z};
+            e.pos = {at.x, at.y + 0.5f * d.size.y + (e.type == "door" ? 0.012f : 0.002f), at.z};   // doors must clear the floor
         }
         z.entities.push_back(e);
         selected = e.id;

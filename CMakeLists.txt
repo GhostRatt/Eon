@@ -78,6 +78,7 @@ add_library(eon_core STATIC
     engine/core/Terrain.cpp
     engine/core/World_Outdoor.cpp
     engine/core/World_Plants.cpp
+    engine/core/MapGen.cpp
     engine/core/World_Scripts.cpp
     engine/core/Physics.cpp)
 target_include_directories(eon_core PUBLIC engine)
@@ -134,8 +135,29 @@ if(EON_BUILD_APPS)
     add_executable(eon_sim apps/sim/main.cpp)
     target_link_libraries(eon_sim PRIVATE eon_render eon_mind)
 
-    add_executable(eon_editor apps/editor/main.cpp)
-    target_link_libraries(eon_editor PRIVATE eon_render)
+    # Dear ImGui (docking) + rlImGui: the editor's panels
+    FetchContent_Declare(imgui
+        GIT_REPOSITORY https://github.com/ocornut/imgui.git
+        GIT_TAG v1.92.7-docking
+        GIT_SHALLOW TRUE
+        SOURCE_SUBDIR do-not-configure)
+    FetchContent_MakeAvailable(imgui)
+    FetchContent_Declare(rlimgui
+        GIT_REPOSITORY https://github.com/raylib-extras/rlImGui.git
+        GIT_TAG Raylib_5_5
+        GIT_SHALLOW TRUE
+        SOURCE_SUBDIR do-not-configure)
+    FetchContent_MakeAvailable(rlimgui)
+    add_library(imgui STATIC
+        ${imgui_SOURCE_DIR}/imgui.cpp ${imgui_SOURCE_DIR}/imgui_draw.cpp ${imgui_SOURCE_DIR}/imgui_tables.cpp
+        ${imgui_SOURCE_DIR}/imgui_widgets.cpp ${imgui_SOURCE_DIR}/imgui_demo.cpp ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp
+        ${rlimgui_SOURCE_DIR}/rlImGui.cpp)
+    target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/misc/cpp ${rlimgui_SOURCE_DIR})
+    target_compile_definitions(imgui PUBLIC NO_FONT_AWESOME)
+    target_link_libraries(imgui PUBLIC raylib)
+
+    add_executable(eon_editor apps/editor/main.cpp apps/editor/Panels.cpp apps/editor/Tools.cpp apps/editor/Plugins.cpp)
+    target_link_libraries(eon_editor PRIVATE eon_render imgui lua)
 endif()
 
 # ---- Tests ----

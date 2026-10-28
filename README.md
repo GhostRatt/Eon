@@ -34,8 +34,15 @@ Put the Primrose files in `content/characters/jenny/source/` (git-ignored, they 
   G close/open the reaching hand, V lift it 25 cm, X relax both arms, arrows move her (relative to your camera),
   Z cycle stance (Backspace = stand), hold Space to climb onto/off what's in front of her, O make her talk, N show her mind (memory context), F9 write her memory (html/report/json), I open mouth, B bite, L pee.
   Render scripts: `--stance-at T S` (switch stance at time T), `--demo switch|lever|crate` (scripted hand use in Test Zone 01).
-- **Editor:** EDIT mode — left **palette** (Tab): click a part (static, battery, lamp, button, lever, relay, tap, food…) or a saved **object** then click in the world to place it (Shift keeps placing). **Behaviours**: click a script to give it to the selected thing, or "+ new script" to write one (opens in your text editor; saving hot-reloads it). Right **inspector**: click any row (name, type, pos, size, color, params) to edit; values are JSON or text, empty removes a param.
-  LMB select (Shift add to selection, Alt a part inside an object), arrows/PgUp/PgDn move, R/F rotate, Ctrl+D duplicate, Del delete, K wire tool (click two terminals; again = disconnect), Ctrl+G save the selection as a new object, Ctrl+E break an object into parts, F5 reload, Ctrl+S save. P toggles PLAY (physics + scripts; grab/push/Space to test); stopping restores the layout.
+- **Editor** (`Run Editor.bat`): dockable panels around the 3D view (drag tabs to rearrange; View > Reset layout).
+  - **File**: New map (outdoor ground with hills/pond/plants, a lit room, or an empty floor), Open, Save (Ctrl+S), Save as.
+  - **View**: RMB + WASD/QE to fly (Shift faster). **Tools**: 1 select (Ctrl+click adds), 2 move (drag the arrows; R/F rotate 15°; snap in the toolbar), 3 wire, 4 terrain, 5 plants. Ctrl+Z/Ctrl+Y undo/redo, Ctrl+D duplicate, Del delete, P play/stop.
+  - **Content**: click a part/object, then click in the view to place it (Shift: keep placing). Objects tab: save the selection as a new object. Scripts tab: give a behaviour to the selection. Maps tab: open maps.
+  - **Inspector**: name, type, transform, and every setting that kind of part understands (with its default and a ? help), its behaviour script (pick, create, open), its wiring (cut), live volts/amps.
+  - **Wire tool**: drag from a green terminal to another. Toolbar: *in the wall* (a hidden connection) or *loose wire* (a real wire with clips she can pull off). Right-click a connection to cut it. The **Schematic** panel shows the circuit as a floor plan with live current.
+  - **World panel**: map name, air temperature, sun, day length, plant speed; terrain (generate from seed/hills/size, regenerate, sculpt with raise/lower/smooth/flatten/noise brushes, dig a pond); plants (species, brush, counts).
+  - **Plugins** (Lua, `content/plugins/*/plugin.lua`, reload on save): add parts, inspector settings and tools. See `content/plugins/README.md`.
+  - PLAY tests it: physics, circuits and scripts run; LMB grabs, F pushes, Space presses/flips the selection; stopping restores the layout.
 
 ### Outdoors
 - `content/zones/outdoors_01.json`: generated rolling ground with a pond in a hollow (sun-lit, sky). Terrain = `"type": "terrain"` with a seed and hill size, or sculpted heights saved in the zone; water = a box whose top is the surface (`autoLevel` fills the hollow). Wood floats, stones sink, buckets fill when held under, she gets wet and cold in it and can drink from it.

@@ -20,6 +20,9 @@
  "Dressing::Step": [
   "Grip RISING edge near the path point at garment.off attaches the hand; progress = 0.7*leading hand t + 0.3*other along per-side paths (bottoms: hip->knee->ankle->toes). Hands can't reach past her toes in a crouch, so bottoms finish by STEPPING OUT (off>=0.75, not held, a foot moves 12 cm). justOff blocks the instant re-dress loop (hand at path end holding the new bundle). Motor::SetHandBusy stops the grip closing on other things while it holds a garment."
  ],
+ "Editor::Commit": [
+  "Commit/Rebuild call World::SetZone, which REPLACES the zone's entity vector: every Entity* / reference into it is dangling afterwards. Panels collect edits into flags (cutLink, breakApart, action, preview) and commit at the end; never commit inside a loop over Z().entities."
+ ],
  "ExpandPrefabs": [
   "Parts get ids instance*1000+n, so Zone::NextId skips _from/spawned entities (else ids explode). Buttons on a cabinet face need ~5 mm standoff from neighbours (Jolt margin) or they never travel."
  ],

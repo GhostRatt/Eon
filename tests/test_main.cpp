@@ -17,6 +17,7 @@
 #include "character/Posture.h"
 #include "character/Wardrobe.h"
 #include "core/Circuit.h"
+#include "core/MapGen.h"
 #include "core/Terrain.h"
 #include "core/World.h"
 #include "core/Physics.h"
@@ -1770,6 +1771,46 @@ static void TestPicksFruit() {
     CHECK(w.BodyPosition(fb).y < f0.y - 0.2f);
 }
 
+// File > New map: each template loads and works (outdoor ground + pond + plants, a lit room, an empty floor).
+static void TestNewMaps(const std::string& contentDir) {
+    NewMapSpec s;
+    s.kind = "outdoor"; s.sizeX = s.sizeZ = 30.f; s.seed = 42;
+    Zone z = MakeMap(s);
+    World w;
+    w.SetContentRoot(contentDir);
+    w.SetZone(z);
+    float g = 0.f;
+    CHECK(w.GroundHeight(0.f, 0.f, g));
+    int water = 0, plants = 0, trees = 0;
+    Vec3 pond;
+    for (const Entity& e : w.GetZone().entities) {
+        if (e.type == "water") { ++water; pond = e.pos; }
+        if (e.type == "plant") { ++plants; trees += e.params.value("species", std::string()) == "tree"; }
+    }
+    CHECK(water == 1 && plants > 50 && trees >= 1);
+    float bed = 0.f;
+    w.GroundHeight(pond.x, pond.z, bed);
+    CHECK(w.WaterDepth({pond.x, bed + 0.05f, pond.z}) > 0.3f);           // the pond holds water in its hollow
+    // a room: switch on, the ceiling lamp lights
+    s.kind = "room"; s.sizeX = 5.f; s.sizeZ = 4.f;
+    Zone r = MakeMap(s);
+    World wr;
+    wr.SetZone(r);
+    int sw = 0, lamp = 0;
+    for (const Entity& e : wr.GetZone().entities) { if (e.type == "switch") sw = e.id; if (e.type == "lamp") lamp = e.id; }
+    CHECK(sw && lamp);
+    wr.Advance(0.3);
+    CHECK(wr.PartOf(lamp)->brightness < 0.05);
+    wr.DebugActuate(sw, true);
+    wr.Advance(0.5);
+    CHECK(wr.PartOf(lamp)->brightness > 0.5);
+    // a saved map round-trips
+    Zone back;
+    CHECK(ZoneFromJson(ZoneToJson(z), back) && back.entities.size() == z.entities.size() && back.sun == z.sun);
+    s.kind = "empty";
+    CHECK(MakeMap(s).entities.size() == 1);
+}
+
 static void TestJennyDrinksEatsPees() {
     Zone z = FloorZone(0.f, 0.f);
     z.entities.push_back(Ent(20, "Tap", "tap", {3.f, 2.f, 3.f}, {0.04f, 0.04f, 0.04f}, 0.f, {{"rate", 40.0}}));
@@ -2018,6 +2059,7 @@ int main(int argc, char** argv) {
     RUN(TestDressingByHand);
     RUN(TestPlants);
     RUN(TestPicksFruit);
+    RUN(TestNewMaps, content);
     RUN(TestWalksOnTerrain, content);
     RUN(TestJennyDrinksEatsPees);
     RUN(TestStepAndClimb);

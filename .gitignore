@@ -30,3 +30,4 @@ content/characters/*/source/
 build_log.txt
 test_log.txt
 build-win/
+eon_editor_layout.ini

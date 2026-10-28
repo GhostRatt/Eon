@@ -27,3 +27,5 @@ content/characters/*/source/
 
 # code graph cache (rebuilt by tools/codegraph/eongraph.py)
 .eongraph/
+build_log.txt
+test_log.txt

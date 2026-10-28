@@ -10,3 +10,6 @@
 
 # small generated test assets: plain git (no LFS)
 tests/data/** -filter -diff -merge binary
+
+# Windows scripts keep CRLF
+*.bat text eol=crlf

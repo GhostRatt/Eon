@@ -10,6 +10,7 @@
 #include "character/LipSync.h"
 #include "character/Motor.h"
 #include "character/BodyMatter.h"
+#include "character/Dressing.h"
 #include "mind/Learner.h"
 #include "mind/MemoryGraph.h"
 #include "mind/Perception.h"
@@ -1477,6 +1478,148 @@ static void TestWalksOnTerrain(const std::string& contentDir) {
     CHECK(std::fabs(end.y - ge) < 0.15f);
 }
 
+// Clothes come off and go on with her hands: grip the waistband at her hips, push it down her legs to her feet,
+// it's a thing in her hand; hold it at her feet and draw it back up, it's on again. Rules still hold.
+static void TestDressingByHand() {
+    Zone z = FloorZone(0.f, 0.f);
+    World w;
+    w.SetZone(z);
+    TestJenny j;
+    CHECK(j.Init(w, {0, 0, 0}, 0.f));
+    Wardrobe wr;
+    Garment panties; panties.name = "Panties"; panties.layer = Layer::Underwear; panties.covers = {"groin", "hips"}; panties.support[3] = 0.3f;
+    Garment bra; bra.name = "Bra"; bra.layer = Layer::Underwear; bra.covers = {"chest"}; bra.support[2] = 0.7f;
+    wr.garments = {panties, bra};
+    CHECK(wr.Wear(0) && wr.Wear(1));
+    Dressing dr;
+    BodyState b;
+    BodyMatter bm;
+    auto live = [&](float seconds) {
+        for (float t = 0; t < seconds; t += 1 / 60.f) {
+            j.motor.PrePhysics(j.ch, w, j.in, 1 / 60.f);
+            w.Advance(1 / 60.f);
+            PostureParams pp;
+            j.motor.PostPhysics(j.ch, w, pp, 1 / 60.f);
+            dr.Step(w, j.ch, j.motor, j.in, wr, 1 / 60.f);
+        }
+    };
+    live(0.5);
+    const RigMap& r = j.ch.Rig();
+    // crouch so her hands reach her ankles
+    j.in.stance = Stance::Crouch;
+    live(2.0);
+    // both hands to the waistband at her hips, grip
+    std::vector<Vec3> pathL, pathR;
+    auto band = [&](int side) {
+        const Vec3 hip = j.ch.BonePos(r.thigh[side]), pel = j.ch.BonePos(r.pelvis);
+        Vec3 lat = hip - pel; lat.y = 0.f;
+        return hip + lat.Normalized({1, 0, 0}) * 0.09f + Vec3{0, 0.06f, 0};
+    };
+    for (int i = 0; i < 2; ++i) { j.in.hands[i].reach = true; j.in.hands[i].effort = 0.6f; j.in.hands[i].target = band(i); }
+    live(1.0);
+    const float d0 = (w.BodyPosition(j.motor.HandBody(0)) - band(0)).Length(), d1 = (w.BodyPosition(j.motor.HandBody(1)) - band(1)).Length();
+    std::printf("  hands at the waistband: %.3f / %.3f m off\n", d0, d1);
+    for (int i = 0; i < 2; ++i) j.in.hands[i].grip = true;
+    live(0.2);
+    CHECK(dr.Holding(0));
+    // push it down: knees, ankles, past the feet
+    auto down = [&](int side, float k) {
+        const Vec3 a = band(side), knee = j.ch.BonePos(r.calf[side]), foot = j.ch.BonePos(r.foot[side]);
+        Vec3 lat = j.ch.BonePos(r.thigh[side]) - j.ch.BonePos(r.pelvis); lat.y = 0.f; lat = lat.Normalized({1, 0, 0});
+        const Vec3 fwd = j.ch.placement.r.Rotate({0, 0, 1});
+        if (k < 0.4f) return a + (knee + lat * 0.07f - a) * (k / 0.4f);
+        if (k < 0.8f) return knee + lat * 0.07f + (foot + lat * 0.05f + Vec3{0, 0.02f, 0} - knee - lat * 0.07f) * ((k - 0.4f) / 0.4f);
+        return foot + lat * 0.05f + Vec3{0, 0.02f, 0} + (fwd * 0.12f + Vec3{0, 0.01f, 0} - lat * 0.05f) * ((k - 0.8f) / 0.2f);
+    };
+    float halfway = -1.f;
+    for (int k = 1; k <= 60; ++k) {
+        for (int i = 0; i < 2; ++i) j.in.hands[i].target = down(i, k / 60.f);
+        live(0.05);
+        if (k == 30) halfway = wr.garments[0].off;
+    }
+    live(0.4);
+    const float atAnkles = wr.garments[0].off;
+    std::printf("  panties: halfway down %.2f, at the end %.2f\n", halfway, atAnkles);
+    CHECK(halfway > 0.3f && halfway < 0.9f);
+    CHECK(atAnkles > 0.75f && !wr.Covers("groin"));
+    // let go at her ankles, stand, step out of them: they stay on the floor
+    for (int i = 0; i < 2; ++i) { j.in.hands[i].grip = false; j.in.hands[i].reach = false; }
+    j.in.stance = Stance::Stand;
+    live(2.0);
+    CHECK(wr.garments[0].worn);                          // still around her ankles
+    j.in.moveDir = {0.f, 0.f, -0.4f};                    // a step back
+    live(0.5);
+    j.in.moveDir = {};
+    live(1.0);
+    CHECK(!wr.garments[0].worn && dr.ObjectOf(0) > 0);
+    const int obj = w.MainBodyOf(dr.ObjectOf(0));
+    CHECK(w.BodyPosition(obj).y < 0.06f);
+    CHECK(wr.Support(3) < 0.01f);
+    std::printf("  stepped out: bundle at %.2f %.2f %.2f\n", w.BodyPosition(obj).x, w.BodyPosition(obj).y, w.BodyPosition(obj).z);
+    // later: it's lying on a stool in front of her. Crouch, pick it up, hold it at her feet, draw it up her legs
+    const Vec3 me = j.motor.Position();
+    const int stool = w.Spawn(Ent(0, "Stool", "static", {me.x + 0.25f, 0.2f, me.z + 0.4f}, {0.3f, 0.4f, 0.3f}));
+    (void)stool;
+    dr.PlaceOff(w, wr, 0, {me.x + 0.2f, 0.43f, me.z + 0.35f});
+    live(0.5);
+    const int obj2 = w.MainBodyOf(dr.ObjectOf(0));
+    j.in.stance = Stance::Crouch;
+    live(2.0);
+    const int hand = 1;
+    auto& h = j.in.hands[hand];
+    h.reach = true;
+    h.target = w.BodyPosition(obj2) + Vec3{0, 0.05f, 0};
+    live(1.2);
+    h.grip = true;
+    live(0.3);
+    CHECK(j.motor.HeldBody(hand) == obj2);
+    h.target = down(hand, 0.85f);                         // down to her ankle with it
+    live(1.5);
+    for (int k = 51; k >= 0; --k) {
+        h.target = down(hand, k / 60.f);
+        j.in.hands[1 - hand].reach = false;
+        live(0.05);
+    }
+    live(0.4);
+    std::printf("  put back on: worn %d off %.2f\n", int(wr.garments[0].worn), wr.garments[0].off);
+    CHECK(wr.garments[0].worn && wr.garments[0].off < 0.1f);
+    CHECK(wr.Covers("groin"));
+    h.grip = false;
+    h.reach = false;
+    // the bra: grip the band at her side, pull it forward off her chest
+    j.in.stance = Stance::Stand;
+    live(2.0);
+    std::vector<Vec3> path;
+    const int chest = r.spine[2] >= 0 ? r.spine[2] : r.SpineTop();
+    auto bandTop = [&](int side) {
+        const Vec3 c = j.ch.BonePos(chest);
+        Vec3 lat = j.ch.BonePos(r.upperarm[side]) - c; lat.y = 0.f; lat = lat.Normalized({1, 0, 0});
+        return c + lat * 0.13f + j.ch.placement.r.Rotate({0, 0, 1}) * 0.05f - Vec3{0, 0.04f, 0};
+    };
+    for (int i = 0; i < 2; ++i) { j.in.hands[i].reach = true; j.in.hands[i].target = bandTop(i); j.in.hands[i].grip = false; }
+    live(1.0);
+    for (int i = 0; i < 2; ++i) j.in.hands[i].grip = true;
+    live(0.2);
+    CHECK(dr.Holding(1));
+    for (int k = 1; k <= 30; ++k) {
+        for (int i = 0; i < 2; ++i) j.in.hands[i].target = bandTop(i) + j.ch.placement.r.Rotate({0, 0, 1}) * (0.4f * k / 30.f) - Vec3{0, 0.06f * k / 30.f, 0};
+        live(0.05);
+    }
+    live(0.3);
+    CHECK(!wr.garments[1].worn && dr.ObjectOf(1) > 0);
+    // streamer mode: the last layer can't be taken hold of
+    wr.streamerMode = true;
+    for (int i = 0; i < 2; ++i) { j.in.hands[i].grip = false; }
+    live(0.5);
+    j.in.stance = Stance::Crouch;
+    live(2.0);
+    for (int i = 0; i < 2; ++i) { j.in.hands[i].reach = true; j.in.hands[i].target = band(i); }
+    live(1.0);
+    for (int i = 0; i < 2; ++i) j.in.hands[i].grip = true;
+    live(0.2);
+    CHECK(!dr.Holding(0));
+}
+
 static void TestJennyDrinksEatsPees() {
     Zone z = FloorZone(0.f, 0.f);
     z.entities.push_back(Ent(20, "Tap", "tap", {3.f, 2.f, 3.f}, {0.04f, 0.04f, 0.04f}, 0.f, {{"rate", 40.0}}));
@@ -1722,6 +1865,7 @@ int main(int argc, char** argv) {
     RUN(TestDigestion);
     RUN(TestTerrainAndWater, content);
     RUN(TestJennyInWater);
+    RUN(TestDressingByHand);
     RUN(TestWalksOnTerrain, content);
     RUN(TestJennyDrinksEatsPees);
     RUN(TestStepAndClimb);

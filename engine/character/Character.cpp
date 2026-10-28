@@ -702,6 +702,11 @@ void Character::SetSkinMask(const std::vector<bool>& drawn) {
     for (size_t i = 0; i < drawn.size() && i < skinMask_.size(); ++i) skinMask_[i] = drawn[i] ? 1 : 0;
 }
 
+void Character::SetMeshOffset(size_t mesh, const Vec3& offset) {
+    if (meshOffset_.size() < asset_->meshes.size()) meshOffset_.resize(asset_->meshes.size());
+    if (mesh < meshOffset_.size()) meshOffset_[mesh] = offset;
+}
+
 void Character::Skin() {
     // 3x4 skinning matrices (bone world * inverse bind)
     const size_t nb = asset_->bones.size();
@@ -749,6 +754,7 @@ void Character::Skin() {
             std::vector<Vec3>& op = outPos_[mi];
             std::vector<Vec3>& on = outNrm_[mi];
             const size_t v0 = b - start[t], v1 = std::min(e, start[t + 1]) - start[t];
+            const Vec3 shift = mi < meshOffset_.size() ? meshOffset_[mi] : Vec3{};
             for (size_t v = v0; v < v1; ++v) {
                 // blend the bone matrices first, then transform once
                 const auto& j = m.joints[v];
@@ -765,7 +771,7 @@ void Character::Skin() {
                 }
                 const Vec3& p = src[v];
                 const Vec3& n = m.nrm[v];
-                op[v] = {M[0] * p.x + M[3] * p.y + M[6] * p.z + M[9], M[1] * p.x + M[4] * p.y + M[7] * p.z + M[10], M[2] * p.x + M[5] * p.y + M[8] * p.z + M[11]};
+                op[v] = Vec3{M[0] * p.x + M[3] * p.y + M[6] * p.z + M[9], M[1] * p.x + M[4] * p.y + M[7] * p.z + M[10], M[2] * p.x + M[5] * p.y + M[8] * p.z + M[11]} + shift;
                 const Vec3 nn{M[0] * n.x + M[3] * n.y + M[6] * n.z, M[1] * n.x + M[4] * n.y + M[7] * n.z, M[2] * n.x + M[5] * n.y + M[8] * n.z};
                 const float l2 = nn.x * nn.x + nn.y * nn.y + nn.z * nn.z;
                 on[v] = l2 > 1e-20f ? nn * (1.f / std::sqrt(l2)) : Vec3{0, 1, 0};

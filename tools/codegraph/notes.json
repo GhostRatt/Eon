@@ -17,6 +17,9 @@
  "Character::Skin": [
   "Perf: morphs applied incrementally (only weights that moved, by dw; full rebuild every ~4000 edits for drift), bone matrices blended per vertex then one transform, all meshes in one ParallelFor (core/Jobs, persistent pool). Meshes masked off by SetSkinMask (hidden materials, unworn garments) are skipped. 0.96 -> 0.39 ms on 2 cores."
  ],
+ "Dressing::Step": [
+  "Grip RISING edge near the path point at garment.off attaches the hand; progress = 0.7*leading hand t + 0.3*other along per-side paths (bottoms: hip->knee->ankle->toes). Hands can't reach past her toes in a crouch, so bottoms finish by STEPPING OUT (off>=0.75, not held, a foot moves 12 cm). justOff blocks the instant re-dress loop (hand at path end holding the new bundle). Motor::SetHandBusy stops the grip closing on other things while it holds a garment."
+ ],
  "ExpandPrefabs": [
   "Parts get ids instance*1000+n, so Zone::NextId skips _from/spawned entities (else ids explode). Buttons on a cabinet face need ~5 mm standoff from neighbours (Jolt margin) or they never travel."
  ],

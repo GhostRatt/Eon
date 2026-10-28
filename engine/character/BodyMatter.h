@@ -1,5 +1,9 @@
 #pragma once
 
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "BodyState.h"
 #include "Character.h"
 #include "Motor.h"
@@ -18,6 +22,7 @@ struct BodyMatterFeel {
     float inWater = 0.f;       // 0..1 how much of her is under water
     float waterC = 0.f;        // its temperature
     bool headUnder = false;    // mouth/nose under the surface
+    std::vector<std::pair<std::string, float>> extra;   // other body feelings to pass on (clothes: snug, bunched...)
 };
 
 class BodyMatter {

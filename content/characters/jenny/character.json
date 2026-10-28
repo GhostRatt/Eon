@@ -62,7 +62,12 @@
         "breast": 0.7
       },
       "clo": 0.03,
-      "worn": false
+      "worn": false,
+      "color": [
+        40,
+        40,
+        48
+      ]
     },
     {
       "name": "Panties",
@@ -80,7 +85,12 @@
         "glute": 0.3
       },
       "clo": 0.02,
-      "worn": false
+      "worn": false,
+      "color": [
+        40,
+        40,
+        48
+      ]
     }
   ],
   "barefootMorph": "FlatFeets",

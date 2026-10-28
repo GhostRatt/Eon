@@ -146,6 +146,7 @@ void Perception::Sense(const World& world, const Motor& motor, const Character& 
         feelM("in water", matter->inWater * 1.2f);
         if (matter->inWater > 0.05f) feelM("cold water", (24.f - matter->waterC) / 10.f);
         if (matter->headUnder) feelM("can't breathe", 1.f);
+        for (const auto& [w, v] : matter->extra) feelM(w.c_str(), v);
     }
 }
 

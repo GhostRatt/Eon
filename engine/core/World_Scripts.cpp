@@ -245,6 +245,16 @@ void World::SetTapScriptOpen(int id, bool open) {
 void World::SetEmissive(int id, float e) { emissiveOverride_[id] = e; }
 void World::SetColor(int id, Rgb c) { colorOverride_[id] = c; }
 
+void World::Despawn(int id) {
+    for (RtBody& b : bodies_)
+        if (b.entity == id && b.h != kNoBody) { physics_->RemoveBody(b.h); b.h = kNoBody; b.entity = 0; }
+    mainBody_.erase(id);
+    for (FoodRt& f : foods_) if (f.entity == id) f.gone = true;
+    scripts_.erase(std::remove_if(scripts_.begin(), scripts_.end(), [id](const ScriptRt& s) { return s.entity == id; }), scripts_.end());
+    zone_.links.erase(std::remove_if(zone_.links.begin(), zone_.links.end(), [id](const TerminalLink& l) { return l.entityA == id || l.entityB == id; }), zone_.links.end());
+    zone_.entities.erase(std::remove_if(zone_.entities.begin(), zone_.entities.end(), [id](const Entity& e) { return e.id == id; }), zone_.entities.end());
+}
+
 int World::Spawn(Entity e) {
     if (e.type == "wire" && !e.params.value("hidden", false)) { ScriptLogLine("spawn: loose wires can't be added while running"); return 0; }
     if (e.id <= 0 || zone_.Find(e.id)) e.id = zone_.NextId();

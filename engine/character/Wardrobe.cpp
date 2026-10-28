@@ -49,18 +49,20 @@ bool Wardrobe::CanWear(int g, std::string* why) const {
 bool Wardrobe::Remove(int g, std::string* why) {
     if (!CanRemove(g, why)) return false;
     garments[g].worn = false;
+    garments[g].off = 0.f;
     return true;
 }
 
 bool Wardrobe::Wear(int g, std::string* why) {
     if (!CanWear(g, why)) return false;
     garments[g].worn = true;
+    garments[g].off = 0.f;
     return true;
 }
 
 float Wardrobe::TotalClo() const {
     float c = 0.f;
-    for (const Garment& g : garments) if (g.worn) c += g.clo;
+    for (const Garment& g : garments) if (g.worn) c += g.clo * (1.f - g.off);
     return c;
 }
 
@@ -69,21 +71,21 @@ float Wardrobe::Support(int tag) const {
     for (const Garment& g : garments) {
         if (!g.worn) continue;
         auto it = g.support.find(tag);
-        if (it != g.support.end()) s = std::max(s, it->second);
+        if (it != g.support.end()) s = std::max(s, it->second * std::max(0.f, 1.f - 2.f * g.off));
     }
     return s;
 }
 
 bool Wardrobe::Covers(const std::string& region) const {
     for (const Garment& g : garments)
-        if (g.worn && std::find(g.covers.begin(), g.covers.end(), region) != g.covers.end()) return true;
+        if (g.worn && g.off < 0.15f && std::find(g.covers.begin(), g.covers.end(), region) != g.covers.end()) return true;
     return false;
 }
 
 void Wardrobe::Apply(Character& ch) const {
     std::unordered_map<std::string, float> morphs;
     for (const Garment& g : garments)
-        for (const std::string& m : g.bodyMorphs) morphs[m] = std::max(morphs[m], g.worn ? 1.f : 0.f);
+        for (const std::string& m : g.bodyMorphs) morphs[m] = std::max(morphs[m], g.worn && g.off < 0.1f ? 1.f : 0.f);
     for (const auto& [m, w] : morphs) ch.SetMorph(m, w);
     ch.SetSupport(2, Support(2));
     ch.SetSupport(3, Support(3));

@@ -159,6 +159,13 @@ float Motor::GroundAt(World& world, const Vec3& p, Vec3* normal) const {
     return pos_.y;
 }
 
+void Motor::Release(World& world, int i) {
+    if (i < 0 || i > 1 || joint_[i] < 0) return;
+    if (held_[1 - i] != held_[i]) world.ClearSteady(held_[i]);
+    world.Detach(joint_[i]);
+    joint_[i] = held_[i] = -1;
+}
+
 void Motor::Teleport(Character& ch, const Vec3& pos, float yaw) {
     pos_ = pos;
     yaw_ = yaw;
@@ -521,7 +528,7 @@ void Motor::UpdateHands(Character& ch, World& world, const MotorIntent& in, floa
         }
 
         // fingers: close on whatever the palm is touching
-        if (h.grip && joint_[i] < 0) {
+        if (h.grip && joint_[i] < 0 && !busy_[i]) {
             const Vec3 f = ch.placement.r.Rotate({0, 0, 1});
             const Vec3 side = Vec3{0, 1, 0}.Cross(f);
             Vec3 dirs[7] = {(target - hp).Normalized(f), {0, -1, 0}, f, side, side * -1.f, (f + Vec3{0, -1, 0}).Normalized(),

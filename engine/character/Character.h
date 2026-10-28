@@ -112,6 +112,8 @@ public:
     void Skin();
     // Meshes that won't be drawn (hidden materials, garments not worn) are skipped by Skin(). Default: all.
     void SetSkinMask(const std::vector<bool>& drawn);
+    // A rigid world-space shift added to a mesh after skinning (a garment sliding down her legs). Zero = none.
+    void SetMeshOffset(size_t mesh, const Vec3& offset);
     const std::vector<Vec3>& SkinnedPos(size_t mesh) const { return outPos_[mesh]; }
     const std::vector<Vec3>& SkinnedNrm(size_t mesh) const { return outNrm_[mesh]; }
 
@@ -156,6 +158,7 @@ private:
     std::vector<std::vector<float>> morphW_;
     std::vector<uint8_t> skinMask_;   // 0 = not drawn this frame: don't skin it
     std::vector<Mat4> skinMats_;
+    std::vector<Vec3> meshOffset_;
     unsigned morphEdits_ = 0;
     std::vector<Vec3> limbDelta_;   // smoothed hand/elbow corrections
     float height_ = 1.7f;

@@ -69,7 +69,13 @@ public:
     Vec3 Position() const { return pos_; }
     void Teleport(Character& ch, const Vec3& pos, float yaw);
     int HandBody(int i) const { return hand_[i]; }
+    // Lets go of whatever that hand holds right now (the thing stays where it is). Used when what she holds stops
+    // being a separate object (a garment going onto her body).
+    void Release(World& world, int hand);
+    // The hand is holding something that isn't a world object (a garment on her body): its grip won't close on anything else.
+    void SetHandBusy(int hand, bool busy) { if (hand >= 0 && hand < 2) busy_[hand] = busy; }
     int HeldBody(int i) const { return held_[i]; }
+    bool HandBusy(int i) const { return busy_[i]; }
     int TipBody(int i) const { return tip_[i]; }
     bool Reaching(int i) const { return reaching_[i]; }
     float Lean() const { return lean_; }
@@ -164,6 +170,7 @@ private:
     float climbT_ = 0.f, climbDur_ = 2.f;
     Vec3 climbFrom_, climbEdge_, climbTo_, climbDir_;
     float climbTopY_ = 0.f;
+    bool busy_[2] = {false, false};
 };
 
 } // namespace eon

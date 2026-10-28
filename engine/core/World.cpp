@@ -827,7 +827,7 @@ void World::BuildRenderFrame(RenderFrame& out) const {
     out.pieces.clear();
     out.lights.clear();
     for (const RtBody& b : bodies_) {
-        if (b.role == Role::Agent || b.role == Role::Terrain) continue;   // drawn by the character renderer / as meshes
+        if (b.h == kNoBody || b.role == Role::Agent || b.role == Role::Terrain) continue;   // removed / drawn by the character renderer / as meshes
         RenderPiece p;
         physics_->GetTransform(b.h, p.pos, p.rot);
         p.rot = (p.rot * b.drawOffset).Normalized();

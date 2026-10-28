@@ -260,7 +260,7 @@ void World::StepMatter(float dt) {
     }
     puddles_.erase(std::remove_if(puddles_.begin(), puddles_.end(), [](const PuddleRt& q) { return Total(q.ml) < 0.05f; }), puddles_.end());
     // eaten food is gone from the world
-    for (FoodRt& f : foods_) if (f.gone) physics_->SetTransform(bodies_[f.body].h, Vec3{1000.f + f.entity, -500.f, 0.f}, Quat{});
+    for (FoodRt& f : foods_) if (f.gone && bodies_[f.body].h != kNoBody) physics_->SetTransform(bodies_[f.body].h, Vec3{1000.f + f.entity, -500.f, 0.f}, Quat{});
 }
 
 float World::Bite(const Vec3& mouth, float reach) {

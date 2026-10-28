@@ -99,7 +99,8 @@ add_library(eon_character STATIC
     engine/character/Wardrobe.cpp
     engine/character/Motor.cpp
     engine/character/LipSync.cpp
-    engine/character/BodyMatter.cpp)
+    engine/character/BodyMatter.cpp
+    engine/character/Dressing.cpp)
 target_include_directories(eon_character PUBLIC engine)
 target_link_libraries(eon_character PUBLIC eon_core PRIVATE ufbx)
 find_package(Threads REQUIRED)

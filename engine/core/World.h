@@ -152,6 +152,7 @@ public:
     void SetContentRoot(const std::string& dir) { contentRoot_ = dir; }
     const std::string& ContentRoot() const { return contentRoot_; }
     int Spawn(Entity e);                                  // add a new object at runtime (returns its id)
+    void Despawn(int entityId);                           // remove a spawned object (its bodies leave the physics world)
     // Places a whole object from content/objects at runtime (scripts, operator tools). Returns the instance's
     // name ("" on failure); its parts are "<name>.<Part>". Removed again by Reset, like everything spawned.
     // Doors (type "door"): a dynamic panel on a hinge along one vertical edge. params: hingeSide left|right,

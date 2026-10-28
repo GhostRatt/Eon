@@ -25,6 +25,7 @@
 #include "character/LipSync.h"
 #include "character/Motor.h"
 #include "character/Posture.h"
+#include "character/Dressing.h"
 #include "character/Wardrobe.h"
 #include "core/World.h"
 #include "render/CharacterRenderer.h"
@@ -55,6 +56,7 @@ struct Body {
     FaceSim face;
     DangleSim hair;
     Wardrobe wardrobe;
+    Dressing dressing;   // clothes off/on with her hands
     Motor motor;
     MotorIntent intent;
     LipSync lips;
@@ -123,6 +125,8 @@ struct Body {
                 g.bodyMorphs = gj.value("bodyMorphs", std::vector<std::string>{});
                 g.clo = gj.value("clo", 0.05f);
                 g.worn = gj.value("worn", false);
+                if (gj.contains("color") && gj["color"].is_array() && gj["color"].size() == 3)
+                    g.color = {gj["color"][0].get<unsigned char>(), gj["color"][1].get<unsigned char>(), gj["color"][2].get<unsigned char>()};
                 const nlohmann::json sup = gj.value("support", nlohmann::json::object());
                 if (sup.contains("breast")) g.support[2] = sup["breast"].get<float>();
                 if (sup.contains("glute")) g.support[3] = sup["glute"].get<float>();
@@ -213,6 +217,7 @@ struct Body {
         posture.lookAt = intent.lookAt;
         motor.PostPhysics(ch, world, posture, dt);
         ch.UpdateLimbCollision(dt);
+        dressing.Step(world, ch, motor, intent, wardrobe, dt);
         wardrobe.Apply(ch);
         ch.contactFloorY = motor.SupportY();
         ch.UpdateSoftTissue(dt);
@@ -239,6 +244,7 @@ struct Body {
             matter.Step(world, ch, motor, mi, state, wardrobe.Covers("groin"), dt);
             felt.drankMl += matter.Feel().drankMl; felt.biteG += matter.Feel().biteG;
             felt.chewing |= matter.Feel().chewing; felt.peeing |= matter.Feel().peeing;
+            felt.extra = dressing.Feelings();
             felt.inWater = std::max(felt.inWater, matter.Feel().inWater); felt.headUnder |= matter.Feel().headUnder;
             if (matter.Feel().inWater > 0.f) felt.waterC = matter.Feel().waterC;
             if (matter.Jaw() > 0.01f) ch.SetMorph("jawOpen", std::max(ch.GetMorph("jawOpen"), matter.Jaw()));
@@ -341,8 +347,26 @@ static void RunDemo(const std::string& d, float t, World& w, Body& b) {
             h.target = h.local ? Vec3{i == 0 ? 0.19f : -0.19f, 0.95f, 0.3f} : c0 + Vec3{i == 0 ? -0.19f : 0.19f, 0.03f, 0.f};
         }
         in.moveDir = t > 5.0f && t < 7.0f ? Vec3{1, 0, 0} : Vec3{};
+    } else if (d == "undress") {   // anywhere: panties on; crouch, thumbs in the waistband at her hips, push them down her legs
+        if (t < 0.02f) { int g = b.wardrobe.Find("Panties"); if (g >= 0 && !b.wardrobe.garments[g].worn) { b.wardrobe.Wear(g); if (b.dressing.ObjectOf(g)) w.Despawn(b.dressing.ObjectOf(g)); } }
+        const Character& ch = b.ch;
+        const RigMap& r = ch.Rig();
+        in.stance = Stance::Crouch;
+        const Vec3 fwd = ch.placement.r.Rotate({0, 0, 1});
+        const float u = std::clamp((t - 3.2f) / 3.0f, 0.f, 1.f);   // 0 at her hips .. 1 at her ankles
+        for (int i = 0; i < 2; ++i) {
+            auto& h = b.intent.hands[i];
+            const Vec3 hip = ch.BonePos(r.thigh[i]), pel = ch.BonePos(r.pelvis);
+            Vec3 lat = hip - pel; lat.y = 0.f; lat = lat.Normalized({1, 0, 0});
+            const Vec3 band = hip + lat * 0.09f + Vec3{0, 0.06f, 0};
+            const Vec3 knee = ch.BonePos(r.calf[i]) + lat * 0.07f, ankle = ch.BonePos(r.foot[i]) + lat * 0.05f + Vec3{0, 0.02f, 0};
+            h.reach = t > 1.8f && t < 7.0f;
+            h.effort = 0.6f;
+            h.grip = t > 3.0f && t < 6.6f;
+            h.target = u < 0.5f ? band + (knee - band) * (u * 2.f) : knee + (ankle + fwd * 0.03f - knee) * ((u - 0.5f) * 2.f);
+        }
     }
-    (void)L; (void)w;
+    (void)L;
 }
 
 int main(int argc, char** argv) {

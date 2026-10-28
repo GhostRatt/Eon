@@ -19,6 +19,8 @@ struct Garment {
     std::unordered_map<int, float> support;  // soft tissue tag -> 0..1 (2 breast, 3 glute)
     float clo = 0.05f;                       // insulation
     bool worn = false;
+    float off = 0.f;                         // while worn: 0 fully on .. 1 slid all the way off (being taken off / put on)
+    Rgb color{230, 175, 185};                // how it looks off her body
     std::vector<int> meshes;                 // in the character asset
 };
 

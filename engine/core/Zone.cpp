@@ -230,6 +230,8 @@ json ZoneToJson(const Zone& zone) {
     j["zone"] = zone.name;
     j["ambientC"] = zone.ambientC;
     if (zone.sun > 0.f) { j["sun"] = zone.sun; j["sunDir"] = V3(zone.sunDir); }
+    if (zone.dayLength != 1440.f) j["dayLength"] = zone.dayLength;
+    if (zone.growth != 1.f) j["growth"] = zone.growth;
     j["entities"] = json::array();
     for (const Entity& e : zone.entities) {
         if (e.params.contains("_from") || e.params.value("spawned", false)) continue;   // prefab parts, runtime spawns: re-created from the object file on load
@@ -261,6 +263,8 @@ bool ZoneFromJson(const json& j, Zone& out, std::string* error) {
         z.name = j.value("zone", std::string("Unnamed"));
         z.ambientC = j.value("ambientC", 22.f);
         z.sun = j.value("sun", 0.f);
+        z.dayLength = j.value("dayLength", 1440.f);
+        z.growth = j.value("growth", 1.f);
         z.sunDir = ReadV3(j, "sunDir", z.sunDir).Normalized({0, -1, 0});
         for (const json& je : j.value("entities", json::array())) {
             Entity e;

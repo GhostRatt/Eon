@@ -33,7 +33,7 @@ public:
     const std::vector<std::pair<std::string, float>>& Feelings() const { return feel_; }
 
     float grabReach = 0.09f;   // palm must be this close to where the garment can be taken hold of
-    float takeReach = 0.14f;   // holding it, this close to her feet/chest to start putting it on
+    float takeReach = 0.18f;   // holding it, this close to her feet/chest to start putting it on
 
 private:
     struct St { int entity = 0; bool hand[2] = {false, false}; bool atFeet = false; Vec3 feetAt[2]; bool justOff = false; };

@@ -39,6 +39,9 @@
  "Perception::Sense": [
   "SENSOR FIREWALL: entity ids/names/types must never leave this function; tracks are scrambled ids keyed by zone+entity"
  ],
+ "TestPicksFruit": [
+  "Jenny must touch, not push, a fruit before gripping: palm target ~7.5 cm from its centre at effort 0.2; pushing into it (4.5 cm) knocks it off the stem (stem holds ~6 N)."
+ ],
  "World::AirTemperature": [
   "heater warmth = W*0.012/(0.25+d^2) C, capped 25 per heater: a 120 W 12 V element is only ~3 C at 45 cm (realistic)"
  ],
@@ -62,6 +65,9 @@
  ],
  "World::RayCast": [
   "pass skipAgent=true from Jenny's code or rays hit her own hands/torso"
+ ],
+ "World::StepPlants": [
+  "4 Hz. Seeds are processed BEFORE plants so watering wets topsoil before roots drink it; roots share puddles (35%/call, max 50 ml). A big tree's roots (spread*growth+0.3 m) drink puddles fast. Seed moisture: soaked*3, dries 0.15/day, needs >0.25 for 2 days. Fruit = food entity + World::Attach point joint to the plant body; JointForce > 6 N (+weight) or ripeness > 1.6 detaches."
  ],
  "World::StepScripts": [
   "Never hold a ScriptRt& across a Lua call: callbacks can spawn scripted objects (spawn_object) which grows scripts_ and reallocates. Copy entity/env first, index scripts_[i] for writes. Symptom was a random 'PANIC: unprotected error ... index a nil value'."

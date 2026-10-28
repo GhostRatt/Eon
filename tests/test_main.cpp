@@ -1620,6 +1620,156 @@ static void TestDressingByHand() {
     CHECK(!dr.Holding(0));
 }
 
+// Plants: grow with water and light, wilt and die dry, recover when watered; fruit ripens on a stem, can be pulled
+// off, falls when overripe, rots into a seed, the seed sprouts. ScatterPlants puts them on the ground.
+static void TestPlants() {
+    Zone z = FloorZone(0.f, 0.f);
+    z.sun = 1.f;
+    z.dayLength = 10.f;     // a game day every 10 s here
+    auto plant = [](int id, const char* sp, Vec3 at, float growth, float moisture) {
+        Entity e = Ent(id, sp, "plant", at, {0.1f, 0.1f, 0.1f});
+        e.params = {{"species", sp}, {"growth", growth}, {"moisture", moisture}};
+        return e;
+    };
+    z.entities.push_back(plant(10, "grass", {-1.f, 0.f, -1.f}, 0.1f, 0.9f));
+    z.entities.push_back(plant(11, "grass", {1.f, 0.f, -1.f}, 0.1f, 0.0f));     // dry ground
+    z.entities.push_back(plant(12, "fruit_tree", {0.f, 0.f, 2.f}, 1.0f, 1.0f));
+    z.entities.push_back(plant(13, "flower", {-2.f, 0.f, 1.f}, 0.3f, 1.0f));
+    World w;
+    w.SetZone(z);
+    World::PlantInfo a, b, tree, fl;
+    // 3 game days: the watered grass grows, the dry one wilts
+    w.Advance(30.0);
+    CHECK(w.PlantState(10, a) && w.PlantState(11, b));
+    std::printf("  3 days: watered grass %.2f (health %.2f), dry grass %.2f (health %.2f)\n", a.growth, a.health, b.growth, b.health);
+    CHECK(a.growth > 0.3f && a.health > 0.9f);
+    CHECK(b.growth < 0.15f && b.health < 0.7f);
+    // water the dry one (a puddle at its roots): it recovers
+    Zone& zz = w.GetZone();
+    (void)zz;
+    for (int k = 0; k < 4; ++k) { w.GetPhysics(); }
+    w.GetZone();
+    // pour 600 ml next to it
+    {
+        Entity cup = Ent(0, "Jug", "tap", {1.f, 0.3f, -1.f}, {0.03f, 0.03f, 0.03f}, 0.f, {{"valve", "script"}, {"rate", 200.0}});
+        const int jug = w.Spawn(cup);
+        w.SetTapScriptOpen(jug, true);
+        w.Advance(3.0);
+        w.SetTapScriptOpen(jug, false);
+    }
+    w.Advance(20.0);
+    CHECK(w.PlantState(11, b));
+    std::printf("  watered: dry grass health %.2f, moisture %.2f\n", b.health, b.moisture);
+    CHECK(b.health > 0.8f && b.moisture > 0.2f);
+    // the flower blooms when grown; the tree has set fruit
+    CHECK(w.PlantState(13, fl) && fl.growth > 0.55f);
+    CHECK(w.PlantState(12, tree));
+    std::printf("  fruit tree: %d fruit hanging after %.1f days\n", tree.fruits, w.GameDays());
+    CHECK(tree.fruits >= 1);
+    int fruit = 0;
+    for (const Entity& e : w.GetZone().entities) if (e.type == "food" && w.FruitOnPlant(e.id)) fruit = e.id;
+    CHECK(fruit > 0);
+    const int fb = w.MainBodyOf(fruit);
+    const float y0 = w.BodyPosition(fb).y;
+    CHECK(y0 > 1.5f);                                      // up in the tree
+    // a gentle pull doesn't take it; a real tug does
+    w.SetPush(fb, w.BodyPosition(fb), {0, 0, 2.f});
+    w.Advance(0.3);
+    CHECK(w.FruitOnPlant(fruit));
+    w.SetPush(fb, w.BodyPosition(fb), {0, -25.f, 6.f});
+    w.Advance(0.3);
+    w.ClearPush();
+    CHECK(!w.FruitOnPlant(fruit));
+    w.Advance(2.0);
+    CHECK(w.BodyPosition(fb).y < 0.1f);                    // fell to the ground
+    CHECK(w.FoodLeftG(fruit) > 100.f);                     // and it's food
+    // left lying: it rots (days), then there's a seed where it was, and the seed sprouts on moist ground
+    int seed = 0;
+    for (int k = 0; k < 120 && !seed; ++k) {
+        w.Advance(1.0);
+        for (const Entity& e : w.GetZone().entities) if (e.type == "seed") seed = e.id;
+    }
+    std::printf("  seed after %.1f days (fruit rotted where it lay)\n", w.GameDays());
+    CHECK(seed > 0);
+    if (seed > 0) {
+        Entity cup = Ent(0, "Jug2", "tap", w.BodyPosition(w.MainBodyOf(seed)) + Vec3{0, 0.3f, 0}, {0.03f, 0.03f, 0.03f}, 0.f, {{"valve", "script"}, {"rate", 200.0}});
+        const int jug = w.Spawn(cup);
+        w.SetTapScriptOpen(jug, true);
+        w.Advance(2.0);
+        w.SetTapScriptOpen(jug, false);
+        w.Advance(40.0);
+    }
+    int sprouts = 0;
+    for (const Entity& e : w.GetZone().entities) sprouts += e.type == "plant" && e.name.find("_sprout") != std::string::npos;
+    std::printf("  after %.1f days: %d sprout(s) from fallen fruit\n", w.GameDays(), sprouts);
+    CHECK(sprouts >= 1);
+    // left without water for long, the dry grass dies
+    // scatter: puts plants on the ground, spaced out
+    World w2;
+    Zone z2 = FloorZone(0.f, 0.f);
+    w2.SetZone(z2);
+    const int n = w2.ScatterPlants("flower", {0, 0, 0}, 2.f, 30, 5);
+    int placed = 0;
+    for (const Entity& e : w2.GetZone().entities) placed += e.type == "plant";
+    CHECK(n >= 20 && placed == n);
+    RenderFrame rf;
+    w2.BuildRenderFrame(rf);
+    CHECK(rf.pieces.size() > static_cast<size_t>(n) * 3);
+}
+
+// Jenny picks a fruit: reaches up, closes her hand on it, pulls it down off its stem, and it's in her hand.
+static void TestPicksFruit() {
+    Zone z = FloorZone(0.f, 0.f);
+    z.sun = 1.f;
+    z.dayLength = 5.f;
+    Entity tree = Ent(10, "Tree", "plant", {0.f, 0.f, 0.f}, {0.1f, 0.1f, 0.1f});
+    tree.params = {{"species", "fruit_tree"}, {"growth", 0.8}, {"moisture", 1.0}};
+    z.entities.push_back(tree);
+    World w;
+    w.SetZone(z);
+    int fruit = 0;
+    float lowest = 1e9f;
+    for (int k = 0; k < 60; ++k) {
+        w.Advance(0.5);
+        for (const Entity& e : w.GetZone().entities)
+            if (e.type == "food" && w.FruitOnPlant(e.id)) {
+                const float y = w.BodyPosition(w.MainBodyOf(e.id)).y;
+                if (y < lowest) { lowest = y; fruit = e.id; }
+            }
+        if (fruit && lowest < 1.75f) break;
+    }
+    CHECK(fruit > 0 && lowest < 1.8f);
+    if (!fruit) return;
+    const int fb = w.MainBodyOf(fruit);
+    const Vec3 f0 = w.BodyPosition(fb);
+    // stand under its branch, facing it
+    Vec3 toTree = Vec3{f0.x, 0.f, f0.z};
+    const Vec3 dir = toTree.Length() > 0.01f ? toTree.Normalized() : Vec3{1, 0, 0};
+    const Vec3 stand = Vec3{f0.x, 0.f, f0.z} + dir * 0.6f;
+    TestJenny j;
+    CHECK(j.Init(w, stand, std::atan2(-dir.x, -dir.z)));
+    j.Run(w, 0.5);
+    auto& h = j.in.hands[1];
+    h.reach = true;
+    h.effort = 0.2f;                                       // gently: a shove knocks it off
+    h.target = f0 + dir * 0.12f;                           // in front of it first
+    j.Run(w, 1.5);
+    h.target = w.BodyPosition(fb) + dir * 0.075f;          // then the palm just touching it (pushing would knock it off)
+    j.Run(w, 0.6);
+    h.grip = true;
+    j.Run(w, 0.3);
+    std::printf("  fruit at %.2f m: holding %d (held %d) hand %.3f from fruit, fruit moved %.3f, on %d\n", f0.y, int(j.motor.HeldBody(1) == fb), j.motor.HeldBody(1),
+                (w.BodyPosition(j.motor.HandBody(1)) - w.BodyPosition(fb)).Length(), (w.BodyPosition(fb) - f0).Length(), int(w.FruitOnPlant(fruit)));
+    CHECK(j.motor.HeldBody(1) == fb);
+    CHECK(w.FruitOnPlant(fruit));
+    // pull it down toward her chest
+    h.target = j.ch.BonePos(j.ch.Rig().SpineTop()) + j.ch.placement.r.Rotate({0, 0, 0.3f});
+    j.Run(w, 1.0);
+    CHECK(!w.FruitOnPlant(fruit));
+    CHECK(j.motor.HeldBody(1) == fb);
+    CHECK(w.BodyPosition(fb).y < f0.y - 0.2f);
+}
+
 static void TestJennyDrinksEatsPees() {
     Zone z = FloorZone(0.f, 0.f);
     z.entities.push_back(Ent(20, "Tap", "tap", {3.f, 2.f, 3.f}, {0.04f, 0.04f, 0.04f}, 0.f, {{"rate", 40.0}}));
@@ -1866,6 +2016,8 @@ int main(int argc, char** argv) {
     RUN(TestTerrainAndWater, content);
     RUN(TestJennyInWater);
     RUN(TestDressingByHand);
+    RUN(TestPlants);
+    RUN(TestPicksFruit);
     RUN(TestWalksOnTerrain, content);
     RUN(TestJennyDrinksEatsPees);
     RUN(TestStepAndClimb);

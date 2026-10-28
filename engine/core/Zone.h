@@ -39,6 +39,8 @@ struct Zone {
     float ambientC = 22.f;
     float sun = 0.f;               // outdoors: sunlight strength (0 = indoors, 1 = clear midday)
     Vec3 sunDir{-0.4f, -0.8f, -0.3f};   // direction the light travels
+    float dayLength = 1440.f;      // real seconds per game day (1440 = 1 game minute per second, like her body clock)
+    float growth = 1.f;            // plant growth speed multiplier (test zones speed nature up)
     std::vector<Entity> entities;
     std::vector<TerminalLink> links;
 

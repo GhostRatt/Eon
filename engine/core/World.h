@@ -166,6 +166,18 @@ public:
     float WaterTemp(const Vec3& p) const;
     Heightfield* TerrainField(int entityId = 0);            // for tools (0 = the first terrain); call TerrainChanged after editing
     void TerrainChanged(int entityId = 0, bool saveToZone = true);
+    // ---- Plants (type "plant": species grass|flower|bush|berry_bush|tree|fruit_tree; params growth 0..1, variety,
+    //      moisture) and seeds (type "seed": species). They grow with water and light in game days (zone dayLength,
+    //      growth), wilt when dry, die if left dry; fruit trees/bushes grow fruit on stems that ripen, can be picked
+    //      (pulled off), fall when overripe, rot into a seed; a seed lying on moist ground sprouts. ----
+    enum class Species : uint8_t { Grass, Flower, Bush, BerryBush, Tree, FruitTree };
+    struct PlantInfo { float growth = 0.f, health = 1.f, moisture = 0.f; int fruits = 0; bool dead = false; };
+    bool PlantState(int entityId, PlantInfo& out) const;
+    float FruitRipeness(int foodEntityId) const;       // 0 green .. 1 ripe .. >1 overripe; -1 not a fruit
+    bool FruitOnPlant(int foodEntityId) const;          // still hanging on its stem
+    double GameDays() const { return simTime_ / std::max(1.f, zone_.dayLength); }
+    // World-building: put plants on the ground (terrain or whatever is below) around a point; returns how many
+    int ScatterPlants(const std::string& species, const Vec3& center, float radius, int count, uint32_t seed, float growth = 1.f);
     float DoorAngle(int entityId) const;                  // degrees open (0 = shut)
     bool DoorShut(int entityId) const { return DoorAngle(entityId) < 1.5f; }
     void SetDoorLocked(int entityId, bool locked);        // a bolt: holds it once it's shut
@@ -283,6 +295,24 @@ private:
     struct TerrainRt { int entity = 0, body = -1; Heightfield hf; uint32_t version = 0; std::vector<RenderMesh> meshes; };
     struct WaterRt { int entity = 0; Vec3 lo, hi; float tempC = 16.f; Rgb color; };
     std::vector<TerrainRt> terrains_;
+    struct FruitRt { int entity = 0, joint = -1; float age = 0.f; bool onPlant = true, rotten = false; float lyingDays = 0.f; Species from = Species::FruitTree; };
+    struct PlantRt {
+        int entity = 0, body = -1; Species species = Species::Grass; Vec3 base; float growth = 1.f, health = 1.f, moisture = 0.6f;
+        float fruitTimer = 0.f, builtSize = -1.f; uint32_t rng = 1; Rgb bloom{220, 60, 80}; bool dead = false;
+    };
+    struct SeedRt { int entity = 0; Species species = Species::Grass; float moistDays = 0.f, moisture = 0.f; };
+    std::vector<PlantRt> plants_;
+    std::vector<FruitRt> fruits_;
+    std::vector<SeedRt> seeds_;
+    double plantClock_ = 0.0;
+    bool BuildPlant(Entity& e);
+    void BuildPlantBody(PlantRt& p);
+    void StepPlants(float dt);
+    void AppendPlantPieces(RenderFrame& out) const;
+    // How the ground at p is watered: `table` 0..1 from standing water nearby (roots reach it), `soaked` = puddle water
+    // taken up now (ml/400, i.e. 400 ml soaks a plant's roots).
+    void SoilWaterAt(const Vec3& p, float radius, float& table, float& soaked);
+    float LightAt(const Vec3& p) const;
     std::vector<WaterRt> waters_;
     bool BuildOutdoor(Entity& e);   // terrain/water: true if handled
     void BuildTerrainBody(TerrainRt& t);

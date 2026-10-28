@@ -125,6 +125,35 @@ od = [
     ent(8, "Stump", "static", (0.0, 0, -1.0), (0.45, 0.45, 0.45), (110, 80, 50), params={"onGround": True}),
 ]
 
+# plants around the outdoor zone (deterministic): grass everywhere, flowers in clumps, bushes, trees, fruit trees
+import random, math
+rng = random.Random(11)
+def away_from_pond(x, z, gap=1.0):
+    return math.hypot(x - 6.0, z - 4.0) > 4.6 + gap
+pid = 100
+def plant(sp, x, z, growth=1.0, variety=None):
+    global pid
+    pid += 1
+    params = {"species": sp, "growth": round(growth, 2)}
+    if variety is not None: params["variety"] = variety
+    return ent(pid, f"{sp}_{pid}", "plant", (round(x, 2), 0, round(z, 2)), (0.1, 0.1, 0.1), (80, 140, 50), params=params)
+for _ in range(220):
+    x, z = rng.uniform(-14, 14), rng.uniform(-14, 14)
+    if away_from_pond(x, z, 0.3) and math.hypot(x, z) > 1.2: od.append(plant("grass", x, z, rng.uniform(0.6, 1.0)))
+for c in range(6):
+    cx, cz = rng.uniform(-11, 11), rng.uniform(-11, 11)
+    if not away_from_pond(cx, cz): continue
+    v = rng.randrange(5)
+    for _ in range(7):
+        od.append(plant("flower", cx + rng.uniform(-0.8, 0.8), cz + rng.uniform(-0.8, 0.8), rng.uniform(0.7, 1.0), v))
+for sp, n, g in [("bush", 6, 1.0), ("berry_bush", 3, 1.0), ("tree", 5, 1.0), ("fruit_tree", 3, 0.95)]:
+    k = 0
+    while k < n:
+        x, z = rng.uniform(-15, 15), rng.uniform(-15, 15)
+        if away_from_pond(x, z, 2.0 if "tree" in sp else 0.8) and math.hypot(x, z) > 3.0:
+            od.append(plant(sp, x, z, g)); k += 1
+od.append(ent(99, "Seeds", "seed", (0.6, 0.4, -1.0), (0.012, 0.008, 0.012), (70, 50, 30), params={"species": "flower"}))
+
 for fname, name, ents, links, amb in [("waiting_area.json", "Waiting Area", wa, wa_links, 22.0), ("test_zone_01.json", "Test Zone 01", tz, tz_links, 22.0),
                                       ("outdoors_01.json", "Outdoors 01", od, [], 19.0)]:
     with open(f"{out}/{fname}", "w") as f:

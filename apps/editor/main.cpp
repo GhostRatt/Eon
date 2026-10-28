@@ -16,6 +16,7 @@
 #include "raylib.h"
 #include "raymath.h"
 
+#include "core/Terrain.h"
 #include "core/World.h"
 #include "render/ZoneRenderer.h"
 
@@ -48,6 +49,7 @@ const PartDef kParts[] = {
     {"container", {0.075f, 0.1f, 0.075f}, 0.15f, {235, 235, 230}, R"({"capacity":300})"},
     {"bowl", {0.3f, 0.12f, 0.3f}, 0.f, {240, 240, 240}, R"({"capacity":3000})"},
     {"door", {0.8f, 1.95f, 0.04f}, 15.f, {150, 110, 80}, R"({"hingeSide":"left","swing":100,"seal":2,"friction":0.5})"},
+    {"seed", {0.012f, 0.008f, 0.012f}, 0.001f, {70, 50, 30}, R"({"species":"flower"})"},
     {"food", {0.075f, 0.075f, 0.075f}, 0.15f, {190, 40, 40}, R"({"grams":150,"kcalPerG":0.52,"waterPerG":0.85})"},
 };
 
@@ -154,6 +156,14 @@ int main(int argc, char** argv) {
     std::set<int> picked;            // multi-selection (Shift+click) for "save as object"
     int selected = -1;
     bool dirty = false, editorLight = true, playing = false, showPalette = true, wireMode = false;
+    // world tools: terrain sculpt brush (T) and plant brush (Y)
+    int terrainTool = 0, plantTool = -1;
+    float brushR = 2.f, flattenY = 0.f;
+    bool stroking = false;
+    uint32_t scatterSeed = 1;
+    const char* kTerrainTools[] = {"off", "raise", "lower", "smooth", "flatten"};
+    const char* kPlants[] = {"grass", "flower", "bush", "berry_bush", "tree", "fruit_tree"};
+    const int kPlantCount[] = {14, 6, 1, 1, 1, 1};
     int placing = -1;                // index into kParts, or 1000+object index
     int wireFrom = -1, wireTerm = -1;
     float grabDist = 0.6f, watchAcc = 0.f, paletteScroll = 0.f;
@@ -244,7 +254,7 @@ int main(int argc, char** argv) {
 
         const Ray ray = GetScreenToWorldRay(mouse, fly.cam);
         RayHit hit;
-        const bool hasHit = world.RayCast(ToEon(ray.position), ToEon(ray.direction), 12.f, hit);
+        const bool hasHit = world.RayCast(ToEon(ray.position), ToEon(ray.direction), 80.f, hit);
         Vec3 aim = hasHit ? hit.point : ToEon(Vector3Add(ray.position, Vector3Scale(ray.direction, 1.5f)));
         if (!hasHit) aim.y = std::max(aim.y, 0.f);
 
@@ -258,7 +268,52 @@ int main(int argc, char** argv) {
         }
         if (key(KEY_TAB)) showPalette = !showPalette;
         if (key(KEY_F5)) { world.ReloadScripts(); scripts = ListScripts(root); objects = ListPrefabs(root); status = "Reloaded scripts and objects"; }
-        if (key(KEY_ESCAPE)) { placing = -1; wireMode = false; wireFrom = -1; picked.clear(); }
+        if (key(KEY_ESCAPE)) { placing = -1; wireMode = false; wireFrom = -1; picked.clear(); terrainTool = 0; plantTool = -1; }
+        if (!playing && key(KEY_T)) {
+            terrainTool = (terrainTool + 1) % 5;
+            plantTool = -1; placing = -1; wireMode = false;
+            status = terrainTool ? std::string("TERRAIN ") + kTerrainTools[terrainTool] + ": hold LMB to sculpt, [ ] radius, T next tool, Esc stop"
+                                 : "Terrain tool off";
+            if (terrainTool && !world.TerrainField()) status = "No terrain in this zone (add a \"terrain\" entity)";
+        }
+        if (!playing && key(KEY_Y)) {
+            plantTool = plantTool + 1 >= 6 ? -1 : plantTool + 1;
+            terrainTool = 0; placing = -1; wireMode = false;
+            status = plantTool >= 0 ? std::string("PLANT ") + kPlants[plantTool] + ": LMB plant, Shift+LMB clear, [ ] radius, Y next, Esc stop" : "Plant tool off";
+        }
+        if (!typing && !ctrl && (terrainTool || plantTool >= 0)) {
+            if (IsKeyPressed(KEY_LEFT_BRACKET)) brushR = std::max(0.25f, brushR / 1.25f);
+            if (IsKeyPressed(KEY_RIGHT_BRACKET)) brushR = std::min(20.f, brushR * 1.25f);
+        }
+        const bool worldTool = !playing && (terrainTool > 0 || plantTool >= 0);
+        if (worldTool && !overUi && hasHit) {
+            if (terrainTool > 0) {
+                if (Heightfield* hf = world.TerrainField()) {
+                    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { stroking = true; flattenY = aim.y; }
+                    if (stroking && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+                        if (terrainTool == 1) BrushRaise(*hf, aim.x, aim.z, brushR, 0.8f * dt);
+                        if (terrainTool == 2) BrushRaise(*hf, aim.x, aim.z, brushR, -0.8f * dt);
+                        if (terrainTool == 3) BrushSmooth(*hf, aim.x, aim.z, brushR, 6.f * dt);
+                        if (terrainTool == 4) BrushFlatten(*hf, aim.x, aim.z, brushR, flattenY, 6.f * dt);
+                        world.TerrainChanged(0, false);
+                    }
+                }
+            } else if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                if (shift) {   // clear plants under the brush
+                    Zone& z = world.GetZone();
+                    const size_t before = z.entities.size();
+                    z.entities.erase(std::remove_if(z.entities.begin(), z.entities.end(), [&](const Entity& e) {
+                        return e.type == "plant" && std::hypot(e.pos.x - aim.x, e.pos.z - aim.z) < brushR; }), z.entities.end());
+                    status = TextFormat("Cleared %d plants", static_cast<int>(before - z.entities.size()));
+                    rebuild();
+                } else {
+                    const int n = world.ScatterPlants(kPlants[plantTool], aim, plantTool >= 2 ? std::min(brushR, 0.6f) : brushR, kPlantCount[plantTool], scatterSeed++, 1.f);
+                    status = TextFormat("Planted %d %s", n, kPlants[plantTool]);
+                    dirty = true;
+                }
+            }
+        }
+        if (stroking && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) { stroking = false; world.TerrainChanged(0, true); dirty = true; }
 
         // hot reload: any script file saved -> scripts restart in place
         if ((watchAcc += dt) > 0.75f) {
@@ -292,7 +347,7 @@ int main(int argc, char** argv) {
             }
             if (sel && sel->type == "button" && IsKeyReleased(KEY_SPACE)) world.DebugActuate(selected, false);
         } else {
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !overUi) {
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !overUi && !worldTool) {
                 if (placing >= 0) {
                     place(placing, aim);
                     if (!shift) placing = -1;   // Shift keeps placing copies
@@ -434,6 +489,17 @@ int main(int argc, char** argv) {
             if (hasHit) for (const Vec3& t : world.TerminalPositions(hit.entity)) DrawSphere(ToRl(t), 0.006f, LIME);
             if (wireFrom > 0) { const auto a = world.TerminalPositions(wireFrom); if (wireTerm < static_cast<int>(a.size())) DrawLine3D(ToRl(a[wireTerm]), ToRl(aim), ORANGE); }
         }
+        if (worldTool && hasHit && !overUi) {
+            const Color c = terrainTool ? ORANGE : LIME;
+            for (int k = 0; k < 48; ++k) {
+                const float a0 = k / 48.f * 6.2831853f, a1 = (k + 1) / 48.f * 6.2831853f;
+                Vec3 p0{aim.x + std::cos(a0) * brushR, 0, aim.z + std::sin(a0) * brushR}, p1{aim.x + std::cos(a1) * brushR, 0, aim.z + std::sin(a1) * brushR};
+                float g0 = aim.y, g1 = aim.y;
+                world.GroundHeight(p0.x, p0.z, g0); world.GroundHeight(p1.x, p1.z, g1);
+                p0.y = g0 + 0.03f; p1.y = g1 + 0.03f;
+                DrawLine3D(ToRl(p0), ToRl(p1), c);
+            }
+        }
         if (placing >= 0 && !overUi) {
             Vec3 s{0.2f, 0.2f, 0.2f};
             if (placing < 1000) s = kParts[placing].size;
@@ -448,7 +514,7 @@ int main(int argc, char** argv) {
         DrawText(TextFormat("%s%s   [%s]%s", world.GetZone().name.c_str(), dirty ? "  *unsaved*" : "", playing ? "PLAY" : "EDIT", wireMode ? "  [WIRE]" : ""),
                  px + 8, 14, 20, playing ? GREEN : RAYWHITE);
         DrawText("LMB select (Shift add, Alt part inside object)  Arrows/PgUp/PgDn move  R/F rotate  Del  Ctrl+D dup", px + 8, 40, 14, LIGHTGRAY);
-        DrawText("Tab palette  K wire  Ctrl+G save selection as object  Ctrl+E break object apart  F5 reload  Ctrl+S save", px + 8, 58, 14, LIGHTGRAY);
+        DrawText("Tab palette  K wire  T terrain  Y plants  Ctrl+G save as object  Ctrl+E break apart  F5 reload  Ctrl+S save", px + 8, 58, 14, LIGHTGRAY);
         DrawText("P play/stop (LMB grab, F push, Space press/flip)  L light  RMB look  WASD/QE fly", px + 8, 76, 14, LIGHTGRAY);
         DrawText(status.c_str(), px + 8, 98, 16, SKYBLUE);
 

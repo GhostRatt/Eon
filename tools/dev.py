@@ -7,6 +7,7 @@
   python3 tools/dev.py sheet OUT A B C ... [--cols 2] [--full]   contact sheet (HUD cropped unless --full)
   python3 tools/dev.py handoff                    compact state of the work (for a new session / after compaction)
   python3 tools/dev.py viz                        writes the code-graph visual (out/eon_codegraph.html)
+  python3 tools/dev.py win                        cross-compiles the Windows .exe files (needs mingw-w64)
   python3 tools/dev.py bench [zone] [--frames N] [--rig]   CPU ms/frame of the whole Jenny pipeline, per stage
 """
 import os
@@ -183,11 +184,28 @@ def cmd_bench(args):
     return r.returncode
 
 
+def cmd_win(args):
+    """Cross-compiles the Windows .exe files (MinGW, static, stripped) into build-win/bin."""
+    if not os.path.isdir("build-win"):
+        c = sh(["cmake", "-S", ".", "-B", "build-win", "-G", "Ninja", "-DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake", "-DCMAKE_BUILD_TYPE=Release"], timeout=900)
+        if c.returncode != 0:
+            print(c.stdout[-1500:] + c.stderr[-1500:])
+            return 1
+    b = sh(["cmake", "--build", "build-win"], timeout=1800)
+    if b.returncode != 0:
+        print("\n".join(l for l in b.stdout.splitlines() if "error" in l.lower())[:3000])
+        return 1
+    for exe in ("eon_sim.exe", "eon_editor.exe", "eon_tests.exe"):
+        sh(["x86_64-w64-mingw32-strip", os.path.join("build-win", "bin", exe)])
+    print("OK  build-win/bin: eon_sim.exe eon_editor.exe eon_tests.exe")
+    return 0
+
+
 def main(argv):
     if len(argv) < 2 or argv[1] in ("-h", "--help"):
         print(__doc__)
         return 0
-    cmds = {"check": cmd_check, "test": cmd_test, "shot": cmd_shot, "sheet": cmd_sheet, "handoff": cmd_handoff, "viz": cmd_viz, "bench": cmd_bench}
+    cmds = {"check": cmd_check, "test": cmd_test, "shot": cmd_shot, "sheet": cmd_sheet, "handoff": cmd_handoff, "viz": cmd_viz, "bench": cmd_bench, "win": cmd_win}
     if argv[1] not in cmds:
         print(__doc__)
         return 1

@@ -29,3 +29,4 @@ content/characters/*/source/
 .eongraph/
 build_log.txt
 test_log.txt
+build-win/

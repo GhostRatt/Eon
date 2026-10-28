@@ -68,7 +68,7 @@ private:
     Shader shader_{};
     Material material_{};
     int locLightPos_ = -1, locLightColor_ = -1, locLightCount_ = -1, locAmbient_ = -1, locUseTex_ = -1;
-    int locWet_ = -1, locIsSkin_ = -1, locViewPos_ = -1;
+    int locWet_ = -1, locIsSkin_ = -1, locViewPos_ = -1, locSunDir_ = -1, locSunColor_ = -1;
     size_t loadedTextures_ = 0;
     std::vector<std::string> missing_;
     bool ready_ = false;

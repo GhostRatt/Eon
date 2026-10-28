@@ -15,6 +15,9 @@ struct BodyMatterFeel {
     float skinMl = 0.f;
     bool peeing = false, soakedClothes = false;
     bool chewing = false;
+    float inWater = 0.f;       // 0..1 how much of her is under water
+    float waterC = 0.f;        // its temperature
+    bool headUnder = false;    // mouth/nose under the surface
 };
 
 class BodyMatter {

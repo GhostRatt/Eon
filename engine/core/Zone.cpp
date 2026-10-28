@@ -229,6 +229,7 @@ json ZoneToJson(const Zone& zone) {
     json j;
     j["zone"] = zone.name;
     j["ambientC"] = zone.ambientC;
+    if (zone.sun > 0.f) { j["sun"] = zone.sun; j["sunDir"] = V3(zone.sunDir); }
     j["entities"] = json::array();
     for (const Entity& e : zone.entities) {
         if (e.params.contains("_from") || e.params.value("spawned", false)) continue;   // prefab parts, runtime spawns: re-created from the object file on load
@@ -259,6 +260,8 @@ bool ZoneFromJson(const json& j, Zone& out, std::string* error) {
         Zone z;
         z.name = j.value("zone", std::string("Unnamed"));
         z.ambientC = j.value("ambientC", 22.f);
+        z.sun = j.value("sun", 0.f);
+        z.sunDir = ReadV3(j, "sunDir", z.sunDir).Normalized({0, -1, 0});
         for (const json& je : j.value("entities", json::array())) {
             Entity e;
             e.id = je.at("id").get<int>();

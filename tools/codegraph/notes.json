@@ -8,6 +8,9 @@
  "BodyState::Swallow": [
   "Stomach only (exp 1.2 game h): drives the 'full' feeling. Food water arrives separately via Intake.ml -> Drink -> bladder. Hunger drops at swallow (satiety). (Stool/bowel was removed on request: pee only.)"
  ],
+ "BuildTerrainMeshes": [
+  "Shore colour uses a chamfer distance (m) from under-water samples, not distance to the water box (boxes are bigger than the pond). Tiles of 64x64 quads to fit 16-bit indices."
+ ],
  "Character::ApplyTissueContact": [
   "breast/glute squash: scales the soft bone along the bone axis closest to world up, volume kept (spread 1/sqrt)"
  ],
@@ -45,6 +48,9 @@
  "World::BuildEntity": [
   "buttons mounted flush on another static body get stuck (Jolt contact margin): give the button base a ~5 mm standoff from the surface it sits on"
  ],
+ "World::BuildOutdoor": [
+  "terrain must come before water/onGround entities in the zone list (water autoLevel and onGround read GroundHeight while building). Heightfield res is rounded to a multiple of 4 (Jolt block size)."
+ ],
  "World::FlowStream": [
   "body streams (peeing) start inside her torso collider: they raycast with skipAgent=true; tap streams start 6mm below the spout so they don't hit the tap"
  ],
@@ -53,6 +59,12 @@
  ],
  "World::RayCast": [
   "pass skipAgent=true from Jenny's code or rays hit her own hands/torso"
+ ],
+ "World::StepScripts": [
+  "Never hold a ScriptRt& across a Lua call: callbacks can spawn scripted objects (spawn_object) which grows scripts_ and reallocates. Copy entity/env first, index scripts_[i] for writes. Symptom was a random 'PANIC: unprotected error ... index a nil value'."
+ ],
+ "World::StepWater": [
+  "Buoyancy per 2x2x2 sub-cell of each dynamic box, force at each cell centre: gives righting torque (a log lies flat). One force at the centre made logs float upright. Agent bodies skipped (no swimming yet)."
  ],
  "ZoneRenderer::Draw": [
   "All boxes go into dynamic meshes of 2700 boxes (16-bit indices): 1 draw call per batch. Color in vertex rgb, emissive/4 in vertex alpha. Backface culling off for them (generated winding not consistent)."

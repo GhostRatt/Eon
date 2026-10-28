@@ -8,6 +8,7 @@
 #include "Circuit.h"
 #include "Math.h"
 #include "Physics.h"
+#include "Terrain.h"
 #include "Zone.h"
 
 struct lua_State;
@@ -21,6 +22,7 @@ struct RenderPiece {
     Vec3 size;          // full box extents (capsules are drawn as their bounding box)
     Rgb color;
     float emissive = 0.f;
+    float alpha = 1.f;  // < 1: drawn translucent (water)
     int entity = 0;     // operator/editor highlighting only; stripped before the mind bridge
 };
 
@@ -32,6 +34,8 @@ struct RenderLight {
 struct RenderFrame {
     std::vector<RenderPiece> pieces;
     std::vector<RenderLight> lights;
+    std::vector<const RenderMesh*> meshes;   // terrain etc. (owned by the World; valid until it changes)
+    Vec3 sunDir{0, -1, 0}, sunColor;           // sunColor zero indoors
 };
 
 struct RayHit {
@@ -153,6 +157,14 @@ public:
     // Doors (type "door"): a dynamic panel on a hinge along one vertical edge. params: hingeSide left|right,
     // frame (name of what it hangs on; none = the world), swing (deg, 100), seal (N*m holding it shut, magnet/latch),
     // friction (N*m), locked. Opening swings its free edge toward its local +z (the side it faces).
+    // ---- Outdoors: terrain (type "terrain") and bodies of water (type "water") ----
+    // terrain params: res (samples/side, multiple of 4), seed, amp (m), feature (m), octaves, rough, basins [[x,z,r,depth]...],
+    //                 heights (saved sculpt, EncodeHeights). water: a box volume, its top is the surface; params tempC.
+    bool GroundHeight(float x, float z, float& y) const;   // terrain surface under (x, z)
+    float WaterDepth(const Vec3& p) const;                  // how far p is under a water surface (<= 0: not in water)
+    float WaterTemp(const Vec3& p) const;
+    Heightfield* TerrainField(int entityId = 0);            // for tools (0 = the first terrain); call TerrainChanged after editing
+    void TerrainChanged(int entityId = 0, bool saveToZone = true);
     float DoorAngle(int entityId) const;                  // degrees open (0 = shut)
     bool DoorShut(int entityId) const { return DoorAngle(entityId) < 1.5f; }
     void SetDoorLocked(int entityId, bool locked);        // a bolt: holds it once it's shut
@@ -169,7 +181,7 @@ public:
     void SetColor(int entityId, Rgb c);
 
 private:
-    enum class Role : uint8_t { Main, Plunger, Lever, RopeSegment, Clip, Agent };
+    enum class Role : uint8_t { Main, Plunger, Lever, RopeSegment, Clip, Agent, Terrain };
 
     struct RtBody {
         BodyHandle h = kNoBody;
@@ -267,6 +279,15 @@ private:
         Rgb skin, flesh;
     };
     struct HeaterRt { int entity = 0, body = -1; };
+    struct TerrainRt { int entity = 0, body = -1; Heightfield hf; uint32_t version = 0; std::vector<RenderMesh> meshes; };
+    struct WaterRt { int entity = 0; Vec3 lo, hi; float tempC = 16.f; Rgb color; };
+    std::vector<TerrainRt> terrains_;
+    std::vector<WaterRt> waters_;
+    bool BuildOutdoor(Entity& e);   // terrain/water: true if handled
+    void BuildTerrainBody(TerrainRt& t);
+    void StepWater(float dt);
+    void AppendWaterPieces(RenderFrame& out) const;
+    float LowestWaterY() const;
     struct DoorRt { int entity = 0, body = -1; ConstraintHandle hinge = kNoConstraint; bool built = false, locked = false, held = false; float swing = 1.75f, seal = 0.f, friction = 0.3f; Vec3 axisW; };
     // a closed space with its own air (fridge, freezer, oven): temperature inside its box drifts toward `airC`
     // while its door is shut and toward the room while it's open

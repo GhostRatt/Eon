@@ -417,7 +417,7 @@ int main(int argc, char** argv) {
         sel = selected > 0 ? world.GetZone().Find(selected) : nullptr;
 
         BeginDrawing();
-        ClearBackground({30, 32, 36, 255});
+        ClearBackground(frame.sunColor.x > 0.f ? Color{150, 185, 220, 255} : Color{30, 32, 36, 255});
         renderer.Draw(frame, fly.cam, sel && sel->type != "prefab" ? selected : -1);
 
         BeginMode3D(fly.cam);

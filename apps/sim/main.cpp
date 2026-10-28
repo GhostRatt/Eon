@@ -188,6 +188,11 @@ struct Body {
         // physiology
         // the air where she is (heaters warm it locally)
         inputs.ambientC = world.AirTemperature(ch.BonePos(ch.Rig().pelvis) + Vec3{0, 0.4f, 0});
+        // in water she loses heat ~25x faster than in air: what's under counts for a lot more
+        if (matter.Feel().inWater > 0.f) {
+            const float k = std::min(1.f, matter.Feel().inWater * 2.5f);
+            inputs.ambientC += (matter.Feel().waterC - 6.f - inputs.ambientC) * k;
+        }
         (void)ambientC;
         inputs.clothingClo = wardrobe.TotalClo();
         inputs.exertion = posture.motion == TestMotion::Bounce ? 0.6f : posture.motion == TestMotion::WalkInPlace ? 0.35f
@@ -234,6 +239,8 @@ struct Body {
             matter.Step(world, ch, motor, mi, state, wardrobe.Covers("groin"), dt);
             felt.drankMl += matter.Feel().drankMl; felt.biteG += matter.Feel().biteG;
             felt.chewing |= matter.Feel().chewing; felt.peeing |= matter.Feel().peeing;
+            felt.inWater = std::max(felt.inWater, matter.Feel().inWater); felt.headUnder |= matter.Feel().headUnder;
+            if (matter.Feel().inWater > 0.f) felt.waterC = matter.Feel().waterC;
             if (matter.Jaw() > 0.01f) ch.SetMorph("jawOpen", std::max(ch.GetMorph("jawOpen"), matter.Jaw()));
         }
 
@@ -432,7 +439,11 @@ int main(int argc, char** argv) {
         pos = comma == std::string::npos ? comma : comma + 1;
     }
     auto ambient = [&]() { return tempOverride > -999.f ? tempOverride : world.GetZone().ambientC; };
-    if (spawnArg && body->loaded) body->motor.Teleport(body->ch, {spawn[0], 0.f, spawn[1]}, spawn[2] * DEG2RAD);
+    if (spawnArg && body->loaded) {
+        float gy = 0.f;
+        world.GroundHeight(spawn[0], spawn[1], gy);   // outdoors: stand on the terrain
+        body->motor.Teleport(body->ch, {spawn[0], gy, spawn[1]}, spawn[2] * DEG2RAD);
+    }
     if (reachArg) {
         auto& h = body->intent.hands[1];
         h.reach = true;
@@ -559,9 +570,10 @@ int main(int argc, char** argv) {
         body->Update(dt, ambient(), world);
 
         BeginDrawing();
-        ClearBackground({8, 8, 10, 255});
-        renderer.Draw(frame, fly.cam, showHud && hasHit ? hit.entity : -1);
+        ClearBackground(frame.sunColor.x > 0.f ? Color{150, 185, 220, 255} : Color{8, 8, 10, 255});   // sky outdoors
+        renderer.Draw(frame, fly.cam, showHud && hasHit ? hit.entity : -1, false);
         if (body->loaded) body->gfx.Draw(frame, fly.cam, renderer.ambient);
+        renderer.DrawTranslucent(fly.cam);   // water over her, not under
         body->DrawDebug(fly.cam);
 
         if (showHud) {

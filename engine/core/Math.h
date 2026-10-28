@@ -158,4 +158,8 @@ struct Mat4 {
     }
 };
 
+struct Rgb {
+    unsigned char r = 200, g = 200, b = 200;
+};
+
 } // namespace eon

@@ -410,17 +410,18 @@ void World::StepScripts(float dt) {
     if (scriptAcc_ < 1.f / 30.f) return;
     const float step = scriptAcc_;
     scriptAcc_ = 0.f;
+    // careful: a callback can spawn objects with scripts, which grows scripts_ (no references held across calls)
     for (size_t i = 0; i < scripts_.size(); ++i) {
-        ScriptRt& s = scripts_[i];
-        if (s.broken) continue;
-        const Entity* e = zone_.Find(s.entity);
-        if (!e) { s.broken = true; continue; }
+        if (scripts_[i].broken) continue;
+        const int entity = scripts_[i].entity, env = scripts_[i].env;
+        const Entity* e = zone_.Find(entity);
+        if (!e) { scripts_[i].broken = true; continue; }
         const std::string name = e->name;
         auto call = [&](const char* fn, bool withDt) {
-            lua_rawgeti(L_, LUA_REGISTRYINDEX, s.env);
+            lua_rawgeti(L_, LUA_REGISTRYINDEX, env);
             lua_getfield(L_, -1, fn);
             if (!lua_isfunction(L_, -1)) { lua_pop(L_, 2); return; }
-            PushEntity(L_, s.entity);
+            PushEntity(L_, entity);
             int n = 1;
             if (withDt) { lua_pushnumber(L_, step); ++n; }
             if (lua_pcall(L_, n, 0, 0) != LUA_OK) {
@@ -430,9 +431,9 @@ void World::StepScripts(float dt) {
             }
             lua_pop(L_, 1);
         };
-        const Part* p = PartOf(s.entity);
+        const Part* p = PartOf(entity);
         const bool closed = p && p->closed;
-        if (closed != s.lastClosed) { s.lastClosed = closed; call(closed ? "on_press" : "on_release", false); }
+        if (closed != scripts_[i].lastClosed) { scripts_[i].lastClosed = closed; call(closed ? "on_press" : "on_release", false); }
         if (!scripts_[i].broken) call("__eon_timers", false);
         if (!scripts_[i].broken) call("on_tick", true);
     }

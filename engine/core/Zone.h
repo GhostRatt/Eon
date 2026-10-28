@@ -10,10 +10,6 @@
 
 namespace eon {
 
-struct Rgb {
-    unsigned char r = 200, g = 200, b = 200;
-};
-
 // Engine-side description of a thing in the world.
 // FIREWALL: name/type/params are internal. Nothing here may ever reach Jenny's mind.
 struct Entity {
@@ -41,6 +37,8 @@ struct TerminalLink {
 struct Zone {
     std::string name;
     float ambientC = 22.f;
+    float sun = 0.f;               // outdoors: sunlight strength (0 = indoors, 1 = clear midday)
+    Vec3 sunDir{-0.4f, -0.8f, -0.3f};   // direction the light travels
     std::vector<Entity> entities;
     std::vector<TerminalLink> links;
 

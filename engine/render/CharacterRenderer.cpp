@@ -45,6 +45,8 @@ uniform float ambient;
 uniform float wetness;      // skin only: sweat/water sheen
 uniform int isSkin;
 uniform vec3 viewPos;
+uniform vec3 sunDir;
+uniform vec3 sunColor;
 out vec4 finalColor;
 void main() {
     vec4 tex = useTex == 1 ? texture(texture0, fragUV) : vec4(1.0);
@@ -59,6 +61,12 @@ void main() {
     float shininess = mix(18.0, 140.0, wet);
     float specAmt = isSkin == 1 ? mix(0.035, 0.6, wet) : 0.02;
     if (isSkin == 1) base *= mix(1.0, 0.85, wet);   // wet skin reads slightly darker
+    {   // sun and sky
+        vec3 L = -sunDir;
+        float ndl = dot(n, L);
+        light += sunColor * max((ndl + 0.3) / 1.3, 0.0) + sunColor * 0.28 * (0.6 + 0.4 * n.y);
+        spec += sunColor * pow(max(dot(n, normalize(L + V)), 0.0), shininess) * specAmt * step(0.0, ndl);
+    }
     for (int i = 0; i < lightCount; ++i) {
         vec3 L = lightPos[i] - fragPos;
         float d = length(L);
@@ -142,6 +150,8 @@ bool CharacterRenderer::Init(const Character& ch, const std::vector<std::string>
     locLightPos_ = GetShaderLocation(shader_, "lightPos");
     locLightColor_ = GetShaderLocation(shader_, "lightColor");
     locLightCount_ = GetShaderLocation(shader_, "lightCount");
+    locSunDir_ = GetShaderLocation(shader_, "sunDir");
+    locSunColor_ = GetShaderLocation(shader_, "sunColor");
     locAmbient_ = GetShaderLocation(shader_, "ambient");
     locUseTex_ = GetShaderLocation(shader_, "useTex");
     locWet_ = GetShaderLocation(shader_, "wetness");
@@ -285,6 +295,8 @@ void CharacterRenderer::Draw(const RenderFrame& lighting, const Camera3D& cam, f
     SetShaderValue(shader_, locAmbient_, &ambient, SHADER_UNIFORM_FLOAT);
     SetShaderValue(shader_, locWet_, &wetness, SHADER_UNIFORM_FLOAT);
     SetShaderValue(shader_, locViewPos_, &cam.position, SHADER_UNIFORM_VEC3);
+    SetShaderValue(shader_, locSunDir_, &lighting.sunDir, SHADER_UNIFORM_VEC3);
+    SetShaderValue(shader_, locSunColor_, &lighting.sunColor, SHADER_UNIFORM_VEC3);
 
     BeginMode3D(cam);
     rlDisableBackfaceCulling();   // thin clothing and hair are often single-sided

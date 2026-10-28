@@ -93,7 +93,7 @@ void World::Reset() {
     ++generation_;
     joints_.clear();
     grab_ = {};   // its bodies were removed by Clear()
-    doors_.clear(); colds_.clear();
+    doors_.clear(); colds_.clear(); terrains_.clear(); waters_.clear();
     taps_.clear(); containers_.clear(); puddles_.clear(); foods_.clear(); heaters_.clear(); streamDraw_.clear();
     bodyStream_ = {}; intake_ = {}; hasMouth_ = mouthOpen_ = false;
 
@@ -161,6 +161,11 @@ int World::FindTerminal(int entity, int term) const {
 
 void World::BuildEntity(Entity& e) {
     if (e.type == "prefab") return;   // placeholder: its parts are separate entities
+    if (BuildOutdoor(e)) return;
+    if (e.params.value("onGround", false)) {   // outdoors: sits on the terrain wherever it's put
+        float g;
+        if (GroundHeight(e.pos.x, e.pos.z, g)) e.pos.y = g + 0.5f * e.size.y + 0.002f;
+    }
     // hidden wires run inside walls: electrical only (ideal links), nothing physical or visible
     if (e.type == "wire" && e.params.value("hidden", false)) return;
     if (e.params.value("ghost", false)) { BuildDoor(e, -1); return; }   // markers and air volumes: no body, not drawn
@@ -456,6 +461,7 @@ void World::FixedStep(float dt) {
             physics_->AddForce(h, f, p);
         }
         StepDoors(dt);
+        StepWater(dt);
         ApplyForces(dt);
         physics_->Step(dt);
         UpdateClips(dt);
@@ -821,7 +827,7 @@ void World::BuildRenderFrame(RenderFrame& out) const {
     out.pieces.clear();
     out.lights.clear();
     for (const RtBody& b : bodies_) {
-        if (b.role == Role::Agent) continue;   // drawn by the character renderer
+        if (b.role == Role::Agent || b.role == Role::Terrain) continue;   // drawn by the character renderer / as meshes
         RenderPiece p;
         physics_->GetTransform(b.h, p.pos, p.rot);
         p.rot = (p.rot * b.drawOffset).Normalized();
@@ -842,6 +848,11 @@ void World::BuildRenderFrame(RenderFrame& out) const {
         out.pieces.push_back(p);
     }
     AppendMatterPieces(out);
+    AppendWaterPieces(out);
+    out.sunDir = zone_.sunDir.Normalized({0, -1, 0});
+    out.sunColor = Vec3{1.f, 0.95f, 0.85f} * (1.6f * zone_.sun);
+    out.meshes.clear();
+    for (const TerrainRt& t : terrains_) for (const RenderMesh& m : t.meshes) out.meshes.push_back(&m);
     // what scripts set on their objects (a light turned on by logic, a status colour)
     for (RenderPiece& rp : out.pieces) {
         auto e = emissiveOverride_.find(rp.entity);

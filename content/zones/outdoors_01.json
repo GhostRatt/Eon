@@ -1,0 +1,254 @@
+{
+  "zone": "Outdoors 01",
+  "ambientC": 19.0,
+  "entities": [
+    {
+      "id": 1,
+      "name": "Ground",
+      "type": "terrain",
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "rot": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        40,
+        4,
+        40
+      ],
+      "color": [
+        86,
+        128,
+        58
+      ],
+      "mass": 0,
+      "params": {
+        "res": 128,
+        "seed": 7,
+        "amp": 2.6,
+        "feature": 18,
+        "octaves": 5,
+        "rough": 0.5,
+        "basins": [
+          [
+            6.0,
+            4.0,
+            5.5,
+            1.5
+          ]
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "name": "Pond",
+      "type": "water",
+      "pos": [
+        6.0,
+        0.0,
+        4.0
+      ],
+      "rot": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        9.0,
+        3.0,
+        9.0
+      ],
+      "color": [
+        70,
+        110,
+        140
+      ],
+      "mass": 0,
+      "params": {
+        "autoLevel": true,
+        "tempC": 15.0
+      }
+    },
+    {
+      "id": 3,
+      "name": "Rock1",
+      "type": "static",
+      "pos": [
+        -3.0,
+        0,
+        -2.0
+      ],
+      "rot": [
+        0,
+        20,
+        0
+      ],
+      "size": [
+        0.9,
+        0.6,
+        0.7
+      ],
+      "color": [
+        130,
+        126,
+        118
+      ],
+      "mass": 0,
+      "params": {
+        "onGround": true
+      }
+    },
+    {
+      "id": 4,
+      "name": "Rock2",
+      "type": "static",
+      "pos": [
+        -1.5,
+        0,
+        3.5
+      ],
+      "rot": [
+        0,
+        60,
+        0
+      ],
+      "size": [
+        0.5,
+        0.35,
+        0.45
+      ],
+      "color": [
+        120,
+        116,
+        110
+      ],
+      "mass": 0,
+      "params": {
+        "onGround": true
+      }
+    },
+    {
+      "id": 5,
+      "name": "Log",
+      "type": "dynamic",
+      "pos": [
+        5.0,
+        2.0,
+        4.5
+      ],
+      "rot": [
+        0,
+        30,
+        0
+      ],
+      "size": [
+        1.2,
+        0.18,
+        0.18
+      ],
+      "color": [
+        120,
+        85,
+        55
+      ],
+      "mass": 12.0
+    },
+    {
+      "id": 6,
+      "name": "Pebble",
+      "type": "dynamic",
+      "pos": [
+        6.5,
+        2.0,
+        3.5
+      ],
+      "rot": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        0.05,
+        0.04,
+        0.05
+      ],
+      "color": [
+        110,
+        110,
+        110
+      ],
+      "mass": 0.3
+    },
+    {
+      "id": 7,
+      "name": "Bucket",
+      "type": "container",
+      "pos": [
+        1.5,
+        0,
+        2.0
+      ],
+      "rot": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        0.25,
+        0.28,
+        0.25
+      ],
+      "color": [
+        90,
+        120,
+        160
+      ],
+      "mass": 0.6,
+      "params": {
+        "capacity": 8000.0,
+        "onGround": true
+      }
+    },
+    {
+      "id": 8,
+      "name": "Stump",
+      "type": "static",
+      "pos": [
+        0.0,
+        0,
+        -1.0
+      ],
+      "rot": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        0.45,
+        0.45,
+        0.45
+      ],
+      "color": [
+        110,
+        80,
+        50
+      ],
+      "mass": 0,
+      "params": {
+        "onGround": true
+      }
+    }
+  ],
+  "links": [],
+  "sun": 1.0,
+  "sunDir": [
+    -0.45,
+    -0.8,
+    -0.35
+  ]
+}

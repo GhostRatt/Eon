@@ -88,6 +88,7 @@ bool World::ValveOpen(int valveEntity) const {
 
 float World::AirTemperature(const Vec3& p) const {
     float t = zone_.ambientC;
+    if (WaterDepth(p) > 0.f) return WaterTemp(p);   // under water: it's the water you feel
     for (const ColdRt& c : colds_)
         if (p.x > c.lo.x && p.x < c.hi.x && p.y > c.lo.y && p.y < c.hi.y && p.z > c.lo.z && p.z < c.hi.z) { t = c.cur; break; }
     for (const HeaterRt& h : heaters_) {
@@ -145,6 +146,10 @@ void World::FlowStream(const StreamRt& s, float dt, StreamDraw* draw) {
         if (hasMouth_ && mouthOpen_ && SegDist(mouth_, p, next) < 0.035f) {
             intake_.ml[int(s.kind)] += amount;
             if (draw) draw->pts.push_back(mouth_);
+            return;
+        }
+        if (WaterDepth(next) > 0.f) {   // falls into a pond: it's just more water
+            if (draw) draw->pts.push_back(next);
             return;
         }
         const Vec3 seg = next - p;

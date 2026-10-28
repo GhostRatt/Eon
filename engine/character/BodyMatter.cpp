@@ -50,6 +50,31 @@ void BodyMatter::Step(World& world, const Character& ch, const Motor& motor, con
         world.ClearBodyStream();
     }
 
+    // standing (or lying, or sitting) in water: wet as high as it comes, drinks if her open mouth is in it
+    {
+        const RigMap& rig = ch.Rig();
+        const Vec3 head = ch.BonePos(rig.head) + Vec3{0, 0.1f, 0};
+        float footY = std::min(ch.BonePos(rig.foot[0]).y, ch.BonePos(rig.foot[1]).y) - 0.08f;
+        float surface = -1e9f;
+        const Vec3 probes[] = {ch.BonePos(rig.foot[0]), ch.BonePos(rig.foot[1]), ch.BonePos(rig.pelvis), ch.BonePos(rig.SpineTop()), mouth, head};
+        for (const Vec3& p : probes) {
+            const float d = world.WaterDepth(p);
+            if (d > 0.f) { surface = std::max(surface, p.y + d); feel_.waterC = world.WaterTemp(p); }
+            footY = std::min(footY, p.y - 0.08f);
+        }
+        if (surface > -1e8f) {
+            const float top = std::max({head.y, mouth.y, footY + 0.2f});
+            feel_.inWater = std::clamp((surface - footY) / std::max(0.2f, top - footY), 0.f, 1.f);
+            body.WetSkin(feel_.inWater * 250.f * dt);   // ml-equivalent: fully under, she's soaked in a second or two
+            feel_.headUnder = world.WaterDepth(mouth) > 0.f;
+            if (feel_.headUnder && in.mouth == MouthAction::Open && chew_ <= 0.f) {
+                const float ml = 18.f * dt;   // gulping
+                body.Drink(ml);
+                feel_.drankMl += ml;
+            }
+        }
+    }
+
     // what reached her this step
     const Intake got = world.TakeIntake();
     const float water = got.ml[static_cast<int>(Liquid::Water)], urine = got.ml[static_cast<int>(Liquid::Urine)];
@@ -57,7 +82,7 @@ void BodyMatter::Step(World& world, const Character& ch, const Motor& motor, con
     body.Drink(urine, true);
     body.Swallow(got.foodG, got.kcal);
     if (got.skinMl > 0.f) body.WetSkin(got.skinMl - got.skinUrineMl), body.WetSkin(got.skinUrineMl, true);
-    feel_.drankMl = water;
+    feel_.drankMl += water;
     feel_.drankUrineMl = urine;
     feel_.kcal = got.kcal;
     feel_.skinMl = got.skinMl;

@@ -13,7 +13,7 @@ constexpr BodyHandle kNoBody = 0xffffffffu;   // also means "fixed to world" in 
 using ConstraintHandle = int;
 constexpr ConstraintHandle kNoConstraint = -1;
 
-enum class Shape : uint8_t { Box, Capsule };
+enum class Shape : uint8_t { Box, Capsule, HeightField };
 
 struct BodyDesc {
     Shape shape = Shape::Box;
@@ -35,6 +35,10 @@ struct BodyDesc {
     uint32_t group = 0;                 // collision group (0 = none)
     uint32_t subGroup = 0;
     uint64_t userData = 0;
+    // HeightField (static only): n*n samples, sample (x, z) sits at pos + (x*cellX, h, z*cellZ)
+    const float* samples = nullptr;
+    int sampleCount = 0;
+    float cellX = 1.f, cellZ = 1.f;
 };
 
 class Physics {

@@ -112,8 +112,24 @@ tz_links = [[20, 0, 23, 0], [23, 1, 21, 0], [21, 1, 24, 0], [24, 1, 22, 0], [22,
             [40, 0, 43, 0], [43, 1, 41, 0], [41, 1, 44, 0], [44, 1, 42, 0], [42, 1, 45, 0], [45, 1, 40, 1],
             [50, 0, 53, 0], [53, 1, 51, 0], [51, 1, 54, 0], [54, 1, 52, 0], [52, 1, 55, 0], [55, 1, 50, 1]]
 
-for fname, name, ents, links in [("waiting_area.json", "Waiting Area", wa, wa_links), ("test_zone_01.json", "Test Zone 01", tz, tz_links)]:
+# Outdoors 01: rolling ground with a pond in a hollow, a few rocks, a floating log, a bucket by the water
+od = [
+    ent(1, "Ground", "terrain", (0, 0, 0), (40, 4, 40), (86, 128, 58),
+        params={"res": 128, "seed": 7, "amp": 2.6, "feature": 18, "octaves": 5, "rough": 0.5, "basins": [[6.0, 4.0, 5.5, 1.5]]}),
+    ent(2, "Pond", "water", (6.0, 0.0, 4.0), (9.0, 3.0, 9.0), (70, 110, 140), params={"autoLevel": True, "tempC": 15.0}),
+    ent(3, "Rock1", "static", (-3.0, 0, -2.0), (0.9, 0.6, 0.7), (130, 126, 118), rot=(0, 20, 0), params={"onGround": True}),
+    ent(4, "Rock2", "static", (-1.5, 0, 3.5), (0.5, 0.35, 0.45), (120, 116, 110), rot=(0, 60, 0), params={"onGround": True}),
+    ent(5, "Log", "dynamic", (5.0, 2.0, 4.5), (1.2, 0.18, 0.18), (120, 85, 55), mass=12.0, rot=(0, 30, 0)),
+    ent(6, "Pebble", "dynamic", (6.5, 2.0, 3.5), (0.05, 0.04, 0.05), (110, 110, 110), mass=0.3),
+    ent(7, "Bucket", "container", (1.5, 0, 2.0), (0.25, 0.28, 0.25), (90, 120, 160), mass=0.6, params={"capacity": 8000.0, "onGround": True}),
+    ent(8, "Stump", "static", (0.0, 0, -1.0), (0.45, 0.45, 0.45), (110, 80, 50), params={"onGround": True}),
+]
+
+for fname, name, ents, links, amb in [("waiting_area.json", "Waiting Area", wa, wa_links, 22.0), ("test_zone_01.json", "Test Zone 01", tz, tz_links, 22.0),
+                                      ("outdoors_01.json", "Outdoors 01", od, [], 19.0)]:
     with open(f"{out}/{fname}", "w") as f:
-        json.dump({"zone": name, "ambientC": 22.0, "entities": ents, "links": links}, f, indent=2)
+        z = {"zone": name, "ambientC": amb, "entities": ents, "links": links}
+        if fname.startswith("outdoors"): z.update({"sun": 1.0, "sunDir": [-0.45, -0.8, -0.35]})
+        json.dump(z, f, indent=2)
         f.write("\n")
 print("ok")

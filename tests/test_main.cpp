@@ -16,6 +16,7 @@
 #include "character/Posture.h"
 #include "character/Wardrobe.h"
 #include "core/Circuit.h"
+#include "core/Terrain.h"
 #include "core/World.h"
 #include "core/Physics.h"
 #include "core/Zone.h"
@@ -1338,6 +1339,144 @@ static void TestDigestion() {
     CHECK(b.BladderMl() > 250.f);                         // the water went through: she needs to pee
 }
 
+// Outdoors: terrain you can stand things on, a pond that fills its hollow, floats wood, sinks stones, fills a bucket.
+static void TestTerrainAndWater(const std::string& contentDir) {
+    // heightfield basics: save format round-trips, brushes do what they say
+    Heightfield hf;
+    hf.Resize(64, 20.f, 20.f);
+    hf.origin = {-10.f, 0.f, -10.f};
+    TerrainGen g; g.seed = 3; g.amplitude = 2.f;
+    GenerateTerrain(hf, g);
+    Heightfield back = hf;
+    CHECK(DecodeHeights(EncodeHeights(hf), back));
+    float err = 0.f;
+    for (size_t i = 0; i < hf.h.size(); ++i) err = std::max(err, std::fabs(hf.h[i] - back.h[i]));
+    CHECK(err < 0.001f);
+    const float h0 = hf.HeightAt(0, 0);
+    BrushRaise(hf, 0, 0, 2.f, 0.5f);
+    CHECK(std::fabs(hf.HeightAt(0, 0) - (h0 + 0.5f)) < 0.05f && std::fabs(hf.HeightAt(5, 5) - back.HeightAt(5, 5)) < 1e-4f);
+    BrushFlatten(hf, 3, 3, 1.5f, 1.25f, 1.f);
+    CHECK(std::fabs(hf.HeightAt(3, 3) - 1.25f) < 0.02f);
+
+    World w;
+    w.SetContentRoot(contentDir);
+    CHECK(w.Load(contentDir + "/zones/outdoors_01.json"));
+    float gy = 0.f;
+    CHECK(w.GroundHeight(-3.f, 3.f, gy));
+    RayHit hit;
+    CHECK(w.RayCast({-3.f, 10.f, 3.f}, {0, -1, 0}, 30.f, hit));   // the physics ground is where the drawn ground is
+    CHECK(std::fabs(hit.point.y - gy) < 0.03f);
+    // the pond fills its hollow, and only that
+    const Vec3 mid{6.f, 0.f, 4.f};
+    float bed = 0.f;
+    w.GroundHeight(mid.x, mid.z, bed);
+    CHECK(w.WaterDepth({mid.x, bed + 0.05f, mid.z}) > 0.5f);
+    CHECK(w.WaterDepth({-3.f, gy + 0.05f, 3.f}) <= 0.f);
+    CHECK(w.AirTemperature({mid.x, bed + 0.1f, mid.z}) < 16.f);    // it's the water you feel under the surface
+    w.Advance(6.0);
+    const int log = IdNamed(w, "Log"), pebble = IdNamed(w, "Pebble"), bucket = IdNamed(w, "Bucket");
+    const Vec3 lp = w.BodyPosition(w.MainBodyOf(log)), pp = w.BodyPosition(w.MainBodyOf(pebble));
+    const float surface = lp.y + w.WaterDepth(lp);
+    std::printf("  pond: bed %.2f, surface %.2f; log at %.2f (floats), pebble at %.2f (sank)\n", bed, surface, lp.y, pp.y);
+    CHECK(w.WaterDepth(lp) > -0.12f && w.WaterDepth(lp) < 0.12f);   // wood rides at the surface
+    CHECK(w.WaterDepth(pp) > 0.3f);                                 // a stone goes to the bottom
+    float under = 0.f;
+    w.GroundHeight(pp.x, pp.z, under);
+    CHECK(pp.y - under < 0.08f);
+    // things put down outdoors sit on the ground
+    const Vec3 bp = w.BodyPosition(w.MainBodyOf(bucket));
+    float bg = 0.f;
+    w.GroundHeight(bp.x, bp.z, bg);
+    CHECK(std::fabs(bp.y - 0.14f - bg) < 0.05f);
+    // an empty bucket floats; held down under the surface (like a hand would), it fills
+    const int bb = w.MainBodyOf(bucket);
+    w.GetPhysics().SetTransform(w.HandleOf(bb), {mid.x, surface + 0.3f, mid.z}, Quat{});
+    w.SetDrive(bb, {mid.x, surface - 0.18f, mid.z}, 600.f, 25.f, 1.f);
+    w.Advance(3.0);
+    w.ClearDrive(bb);
+    std::printf("  bucket held under: %.0f ml\n", w.ContainerMl(bucket, Liquid::Water));
+    CHECK(w.ContainerMl(bucket, Liquid::Water) > 300.f);
+}
+
+// Jenny in the pond: she gets wet as deep as she stands, feels the cold, drinks with her mouth in it.
+static void TestJennyInWater() {
+    Zone z = FloorZone(0.f, 0.f);
+    Entity pool = Ent(30, "Pool", "water", {0.f, 0.575f, 0.f}, {3.f, 1.15f, 3.f});
+    pool.params = {{"tempC", 14.0}};
+    z.entities.push_back(pool);
+    World w;
+    w.SetZone(z);
+    TestJenny j;
+    CHECK(j.Init(w, {0, 0, 0}, 0.f));
+    BodyState b;
+    BodyMatter bm;
+    float inWater = 0.f;
+    bool headUnder = false;
+    auto live = [&](float seconds) {
+        for (float t = 0; t < seconds; t += 1 / 60.f) {
+            j.motor.PrePhysics(j.ch, w, j.in, 1 / 60.f);
+            w.Advance(1 / 60.f);
+            PostureParams pp;
+            j.motor.PostPhysics(j.ch, w, pp, 1 / 60.f);
+            bm.Step(w, j.ch, j.motor, j.in, b, false, 1 / 60.f);
+            inWater = bm.Feel().inWater;
+            headUnder = bm.Feel().headUnder;
+        }
+    };
+    live(1.0);
+    std::printf("  standing in 1.15 m of water: %.0f%% under, skin wet %.2f\n", 100.f * inWater, b.skinWater);
+    CHECK(inWater > 0.4f && inWater < 0.85f && !headUnder);
+    CHECK(b.skinWater > 0.2f);
+    CHECK(w.AirTemperature(j.ch.BonePos(j.ch.Rig().calf[0])) < 15.f);
+    Perception eyes;
+    Percept pc;
+    eyes.Sense(w, j.motor, j.ch, &b, 1.0, pc, &bm.Feel());
+    bool feelsIt = false, cold = false;
+    for (const auto& f : pc.feelings) { feelsIt |= f.first == "in water"; cold |= f.first == "cold water"; }
+    CHECK(feelsIt && cold);
+    // kneel and put her face in with her mouth open: she drinks (and can't breathe)
+    const float thirst0 = b.Get(Need::Thirst);
+    j.in.stance = Stance::Kneel;
+    live(2.5);
+    j.in.mouth = MouthAction::Open;
+    const float mouthY = j.ch.MouthPos().y;
+    std::printf("  kneeling: mouth at %.2f m (surface 1.15)\n", mouthY);
+    live(2.0);
+    CHECK(headUnder && b.Get(Need::Thirst) < thirst0 - 3.f);
+}
+
+// She walks across uneven outdoor ground, feet on the terrain, upright.
+static void TestWalksOnTerrain(const std::string& contentDir) {
+    World w;
+    w.SetContentRoot(contentDir);
+    CHECK(w.Load(contentDir + "/zones/outdoors_01.json"));
+    float g0 = 0.f;
+    w.GroundHeight(-0.5f, 4.f, g0);
+    TestJenny j;
+    CHECK(j.Init(w, {-0.5f, g0, 4.f}, 1.5708f));   // facing +x: down the slope toward the pond
+    j.Run(w, 1.0);
+    const Vec3 start = j.motor.Position();
+    j.in.moveDir = {0.8f, 0.f, 0.f};
+    float worstHip = 1e9f, bestHip = -1e9f;
+    for (int k = 0; k < 40; ++k) {
+        j.Run(w, 0.1);
+        float g = 0.f;
+        const Vec3 pel = j.ch.BonePos(j.ch.Rig().pelvis);
+        w.GroundHeight(pel.x, pel.z, g);
+        worstHip = std::min(worstHip, pel.y - g);
+        bestHip = std::max(bestHip, pel.y - g);
+    }
+    j.in.moveDir = {};
+    j.Run(w, 0.5);
+    const Vec3 end = j.motor.Position();
+    float ge = 0.f;
+    w.GroundHeight(end.x, end.z, ge);
+    std::printf("  walked %.2f m over ground %.2f -> %.2f m; hip %.2f..%.2f m above it\n", (end - start).Length(), g0, ge, worstHip, bestHip);
+    CHECK((end - start).Length() > 1.5f);
+    CHECK(worstHip > 0.7f && bestHip < 1.2f);
+    CHECK(std::fabs(end.y - ge) < 0.15f);
+}
+
 static void TestJennyDrinksEatsPees() {
     Zone z = FloorZone(0.f, 0.f);
     z.entities.push_back(Ent(20, "Tap", "tap", {3.f, 2.f, 3.f}, {0.04f, 0.04f, 0.04f}, 0.f, {{"rate", 40.0}}));
@@ -1581,6 +1720,9 @@ int main(int argc, char** argv) {
     RUN(TestSitOnSeat);
     RUN(TestBiteMarks);
     RUN(TestDigestion);
+    RUN(TestTerrainAndWater, content);
+    RUN(TestJennyInWater);
+    RUN(TestWalksOnTerrain, content);
     RUN(TestJennyDrinksEatsPees);
     RUN(TestStepAndClimb);
     RUN(TestLipSync);

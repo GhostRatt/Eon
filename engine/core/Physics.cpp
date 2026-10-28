@@ -15,6 +15,7 @@
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
+#include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
 #include <Jolt/Physics/Constraints/HingeConstraint.h>
 #include <Jolt/Physics/Constraints/PointConstraint.h>
@@ -147,7 +148,13 @@ void Physics::DisableCollision(uint32_t group, uint32_t subA, uint32_t subB) {
 
 BodyHandle Physics::CreateBody(const BodyDesc& d) {
     JPH::ShapeRefC shape;
-    if (d.shape == Shape::Capsule) {
+    if (d.shape == Shape::HeightField) {
+        JPH::HeightFieldShapeSettings hs(d.samples, JPH::Vec3(0, 0, 0), JPH::Vec3(d.cellX, 1.f, d.cellZ), static_cast<JPH::uint32>(d.sampleCount));
+        hs.mBlockSize = 4;
+        auto r = hs.Create();
+        if (r.HasError()) return kNoBody;
+        shape = r.Get();
+    } else if (d.shape == Shape::Capsule) {
         shape = new JPH::CapsuleShape(std::max(d.halfHeight, 0.0005f), std::max(d.radius, 0.0005f));
     } else {
         const JPH::Vec3 he(std::max(d.halfExtent.x, 0.001f), std::max(d.halfExtent.y, 0.001f), std::max(d.halfExtent.z, 0.001f));

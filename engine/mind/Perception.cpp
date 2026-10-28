@@ -141,6 +141,11 @@ void Perception::Sense(const World& world, const Motor& motor, const Character& 
         out.biteG = matter->biteG;
         out.chewing = matter->chewing;
         out.peeing = matter->peeing;
+        out.inWater = matter->inWater;
+        auto feelM = [&](const char* w, float v) { if (v > 0.05f) out.feelings.push_back({w, std::min(1.f, v)}); };
+        feelM("in water", matter->inWater * 1.2f);
+        if (matter->inWater > 0.05f) feelM("cold water", (24.f - matter->waterC) / 10.f);
+        if (matter->headUnder) feelM("can't breathe", 1.f);
     }
 }
 

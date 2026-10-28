@@ -50,6 +50,7 @@ struct Percept {
     // mouth and body (what she takes in / lets out, felt directly)
     float drankMl = 0.f, biteG = 0.f;
     bool chewing = false, peeing = false;
+    float inWater = 0.f;
     float airC = 20.f;              // how warm the air feels where she is
 };
 

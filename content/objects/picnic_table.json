@@ -1,0 +1,19 @@
+{
+  "name": "picnic_table",
+  "category": "Outdoor",
+  "description": "Picnic table with a bench on each side.",
+  "parts": [
+    {"name": "Top", "type": "static", "pos": [0, 0.74, 0], "size": [1.8, 0.05, 0.75], "color": [150, 110, 75]},
+    {"name": "Leg1", "type": "static", "pos": [-0.75, 0.3575, -0.3], "size": [0.08, 0.715, 0.08], "color": [150, 110, 75]},
+    {"name": "Leg2", "type": "static", "pos": [0.75, 0.3575, -0.3], "size": [0.08, 0.715, 0.08], "color": [150, 110, 75]},
+    {"name": "Leg3", "type": "static", "pos": [-0.75, 0.3575, 0.3], "size": [0.08, 0.715, 0.08], "color": [150, 110, 75]},
+    {"name": "Leg4", "type": "static", "pos": [0.75, 0.3575, 0.3], "size": [0.08, 0.715, 0.08], "color": [150, 110, 75]},
+    {"name": "BenchA", "type": "static", "pos": [0, 0.44, 0.65], "size": [1.8, 0.05, 0.3], "color": [150, 110, 75]},
+    {"name": "BenchB", "type": "static", "pos": [0, 0.44, -0.65], "size": [1.8, 0.05, 0.3], "color": [150, 110, 75]},
+    {"name": "BenchLeg1", "type": "static", "pos": [-0.75, 0.21, -0.65], "size": [0.08, 0.42, 0.08], "color": [150, 110, 75]},
+    {"name": "BenchLeg2", "type": "static", "pos": [0.75, 0.21, -0.65], "size": [0.08, 0.42, 0.08], "color": [150, 110, 75]},
+    {"name": "BenchLeg3", "type": "static", "pos": [-0.75, 0.21, 0.65], "size": [0.08, 0.42, 0.08], "color": [150, 110, 75]},
+    {"name": "BenchLeg4", "type": "static", "pos": [0.75, 0.21, 0.65], "size": [0.08, 0.42, 0.08], "color": [150, 110, 75]}
+  ],
+  "links": []
+}

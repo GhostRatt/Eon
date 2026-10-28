@@ -1,5 +1,6 @@
 {
   "name": "timer_light",
+  "category": "Gadgets",
   "description": "Lamp on a battery that a timer relay blinks (on 1 s, off 1 s).",
   "parts": [
     {"name": "Battery", "type": "battery", "pos": [0.1, 0.08, 0], "size": [0.06, 0.15, 0.1], "color": [60, 60, 60], "params": {"voltage": 12.0, "internalR": 0.05, "capacityAh": 7.0}},

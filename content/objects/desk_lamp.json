@@ -1,0 +1,14 @@
+{
+  "name": "desk_lamp",
+  "category": "Gadgets",
+  "description": "Desk lamp with a switch on its base (battery inside the base).",
+  "parts": [
+    {"name": "Base", "type": "static", "pos": [0, 0.025, 0], "size": [0.16, 0.05, 0.16], "color": [40, 40, 45]},
+    {"name": "Cell", "type": "battery", "pos": [0, 0.025, 0], "size": [0.05, 0.03, 0.05], "color": [60, 60, 60], "params": {"voltage": 12, "internalR": 0.1, "capacityAh": 10}},
+    {"name": "Stem", "type": "static", "pos": [0, 0.22, -0.04], "size": [0.02, 0.34, 0.02], "color": [40, 40, 45]},
+    {"name": "Shade", "type": "static", "pos": [0, 0.4, 0.0], "size": [0.12, 0.05, 0.12], "color": [40, 40, 45]},
+    {"name": "Bulb", "type": "lamp", "pos": [0, 0.36, 0.0], "size": [0.05, 0.04, 0.05], "color": [250, 240, 200], "params": {"ratedPower": 5, "ratedVoltage": 12}},
+    {"name": "Switch", "type": "switch", "pos": [0.05, 0.0575, 0.04], "size": [0.05, 0.015, 0.04], "color": [220, 220, 220], "params": {"axis": [0, 1, 0]}}
+  ],
+  "links": [["Cell", 0, "Switch", 0], ["Switch", 1, "Bulb", 0], ["Bulb", 1, "Cell", 1]]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "lunch_tray",
+  "category": "Food",
+  "description": "Tray with a bread roll, an apple and a cup of water.",
+  "parts": [
+    {"name": "Tray", "type": "dynamic", "pos": [0, 0.01, 0], "size": [0.42, 0.02, 0.3], "color": [160, 160, 165], "mass": 0.4},
+    {"name": "Bread", "type": "food", "pos": [-0.1, 0.05, 0], "size": [0.12, 0.05, 0.08], "color": [200, 160, 100], "mass": 0.08, "params": {"grams": 80, "kcalPerG": 2.6, "waterPerG": 0.35}},
+    {"name": "Apple", "type": "food", "pos": [0.04, 0.06, 0.06], "size": [0.075, 0.075, 0.075], "color": [120, 180, 60], "mass": 0.15, "params": {"grams": 150, "kcalPerG": 0.52, "waterPerG": 0.85, "inside": [245, 240, 200]}},
+    {"name": "Cup", "type": "container", "pos": [0.13, 0.07, -0.06], "size": [0.075, 0.1, 0.075], "color": [238, 238, 236], "mass": 0.15, "params": {"capacity": 300, "water": 250}}
+  ],
+  "links": []
+}

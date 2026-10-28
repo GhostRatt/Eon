@@ -1,0 +1,12 @@
+{
+  "name": "toilet",
+  "category": "Kitchen & bath",
+  "description": "Toilet: bowl with a cistern; press the flush button to empty the bowl.",
+  "parts": [
+    {"name": "Bowl", "type": "bowl", "pos": [0, 0.2, 0.05], "size": [0.38, 0.4, 0.55], "color": [238, 238, 236], "params": {"capacity": 6000, "water": 1500, "drain": "#Flush"}},
+    {"name": "Seat", "type": "static", "pos": [0, 0.415, 0.06], "size": [0.38, 0.03, 0.46], "color": [238, 238, 236]},
+    {"name": "Cistern", "type": "static", "pos": [0, 0.6, -0.26], "size": [0.4, 0.4, 0.16], "color": [238, 238, 236]},
+    {"name": "Flush", "type": "button", "pos": [0.12, 0.7, -0.165], "size": [0.05, 0.05, 0.02], "color": [180, 182, 188], "params": {"axis": [0, 0, 1]}}
+  ],
+  "links": []
+}

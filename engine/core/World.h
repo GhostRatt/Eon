@@ -87,6 +87,8 @@ public:
     void SetKinematicTarget(int body, const Vec3& pos, const Quat& rot);
     // Rigid joint between two bodies at a point (a grip). Returns a handle for Detach/JointForce.
     int Attach(int bodyA, int bodyB, const Vec3& worldPoint);
+    // Welded parts (param `weld` = name or id of the part it's fixed to; `weldBreakN` = pulls apart above this force).
+    bool Welded(int entityA, int entityB) const;   // still joined
     void Detach(int joint);
     float JointForce(int joint) const;   // N during the last step
     Vec3 BodyVelocity(int body) const;
@@ -365,6 +367,10 @@ private:
     std::vector<SteadyRt> steady_;
     std::vector<KinRt> kinematic_;
     std::vector<ConstraintHandle> joints_;
+    struct WeldRt { int a = 0, b = 0; ConstraintHandle c = kNoConstraint; float breakN = 0.f; };
+    std::vector<WeldRt> welds_;
+    void BuildWelds();
+    void StepWelds(float dt);
     float lastDt_ = static_cast<float>(kFixedDt);
     int generation_ = 0;
 

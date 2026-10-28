@@ -1,0 +1,13 @@
+{
+  "name": "table",
+  "category": "Furniture",
+  "description": "Wooden table, 1.2 x 0.7 m (18 kg): heavy, but she can shove it.",
+  "parts": [
+    {"name": "Top", "type": "dynamic", "pos": [0, 0.735, 0], "size": [1.2, 0.04, 0.7], "color": [150, 110, 75], "mass": 12},
+    {"name": "Leg1", "type": "dynamic", "pos": [-0.55, 0.3575, -0.3], "size": [0.06, 0.715, 0.06], "color": [150, 110, 75], "mass": 1.5, "params": {"weld": "$Top"}},
+    {"name": "Leg2", "type": "dynamic", "pos": [0.55, 0.3575, -0.3], "size": [0.06, 0.715, 0.06], "color": [150, 110, 75], "mass": 1.5, "params": {"weld": "$Top"}},
+    {"name": "Leg3", "type": "dynamic", "pos": [-0.55, 0.3575, 0.3], "size": [0.06, 0.715, 0.06], "color": [150, 110, 75], "mass": 1.5, "params": {"weld": "$Top"}},
+    {"name": "Leg4", "type": "dynamic", "pos": [0.55, 0.3575, 0.3], "size": [0.06, 0.715, 0.06], "color": [150, 110, 75], "mass": 1.5, "params": {"weld": "$Top"}}
+  ],
+  "links": []
+}

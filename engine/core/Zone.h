@@ -46,6 +46,7 @@ struct Zone {
 
     Entity* Find(int id);
     const Entity* Find(int id) const;
+    const Entity* FindByName(const std::string& name) const;
     int NextId() const;
 
     // Creates circuit parts for electrical entities and wires up the links.
@@ -62,7 +63,7 @@ bool LoadZone(const std::string& path, Zone& out, std::string* error = nullptr);
 // A zone places one with an entity of type "prefab" (params.prefab = name; params.set = {"Part.key": value} overrides).
 // Expansion turns it into real entities named "<Instance>.<Part>" with stable ids (instance id * 1000 + part #),
 // so wires to its parts and saved zones keep working. "$Part" in a part's params means "<Instance>.Part".
-struct PrefabInfo { std::string name, description; int parts = 0; };
+struct PrefabInfo { std::string name, description; int parts = 0; std::string category; };
 bool ExpandPrefabs(Zone& zone, const std::string& contentRoot, std::string* log = nullptr);
 std::vector<PrefabInfo> ListPrefabs(const std::string& contentRoot);
 // Saves entities (and the links among them) as a new prefab, positions relative to `origin`.

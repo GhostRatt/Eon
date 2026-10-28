@@ -1,0 +1,12 @@
+{
+  "name": "fruit_bowl",
+  "category": "Food",
+  "description": "Bowl with three apples on it.",
+  "parts": [
+    {"name": "Bowl", "type": "bowl", "pos": [0, 0.03, 0], "size": [0.28, 0.06, 0.28], "color": [210, 180, 130], "params": {"capacity": 1500}},
+    {"name": "Apple1", "type": "food", "pos": [-0.06, 0.1, -0.04], "size": [0.075, 0.075, 0.075], "color": [190, 40, 40], "mass": 0.15, "params": {"grams": 150, "kcalPerG": 0.52, "waterPerG": 0.85}},
+    {"name": "Apple2", "type": "food", "pos": [0.06, 0.1, -0.04], "size": [0.075, 0.075, 0.075], "color": [190, 40, 40], "mass": 0.15, "params": {"grams": 150, "kcalPerG": 0.52, "waterPerG": 0.85}},
+    {"name": "Apple3", "type": "food", "pos": [0.0, 0.1, 0.06], "size": [0.075, 0.075, 0.075], "color": [190, 40, 40], "mass": 0.15, "params": {"grams": 150, "kcalPerG": 0.52, "waterPerG": 0.85}}
+  ],
+  "links": []
+}

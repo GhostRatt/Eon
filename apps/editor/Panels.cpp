@@ -88,8 +88,10 @@ void BuildSchemas(Editor& ed) {
     S["water"] = {Num("tempC", 16, -2, 60, 0.5f, "Water temperature."), Bool("autoLevel", false, "Fill the hollow it sits in (surface just below the rim)."),
                   Num("freeboard", 0.12f, 0, 2, 0.01f, "With autoLevel: how far below the rim.")};
     S["prefab"] = {Text("prefab", "", "Object file in content/objects.")};
-    for (auto& [type, defs] : S) {   // every part can carry a script and be a part of the electrical "hidden" layer
-        (void)type;
+    for (auto& [type, defs] : S) {   // anything with a body can be welded to another part (one rigid object)
+        if (type == "terrain" || type == "water" || type == "plant" || type == "seed" || type == "prefab" || type == "wire") continue;
+        defs.push_back(Name("weld", "Fixed to this part (name): together they move as one piece, like a chair's legs and seat."));
+        defs.push_back(Num("weldBreakN", 0, 0, 5000, 1, "Pulls apart above this force, N (0 = never)."));
     }
 }
 
@@ -135,7 +137,7 @@ void BuildPalette(Editor& ed) {
     add("Nature", "Rock", "static", {0.7f, 0.5f, 0.6f}, 0, {128, 124, 116}, {{"onGround", true}}, "");
     for (const PrefabInfo& o : ed.objects) {
         PaletteItem it;
-        it.category = "Objects"; it.label = o.name; it.type = "prefab"; it.size = {0.1f, 0.1f, 0.1f}; it.params = {{"prefab", o.name}}; it.help = o.description;
+        it.category = o.category.empty() ? "Objects" : o.category; it.label = o.name; it.type = "prefab"; it.size = {0.1f, 0.1f, 0.1f}; it.params = {{"prefab", o.name}}; it.help = o.description;
         P.push_back(it);
     }
     for (const PaletteItem& p : keep) P.push_back(p);
@@ -158,7 +160,27 @@ void DrawMenuBar(Editor& ed) {
         if (ImGui::MenuItem("Undo", "Ctrl+Z", false, !ed.undo.empty())) ed.Undo();
         if (ImGui::MenuItem("Redo", "Ctrl+Y", false, !ed.redo.empty())) ed.Redo();
         ImGui::Separator();
+        if (ImGui::MenuItem("Copy", "Ctrl+C", false, !ed.selection.empty())) ed.Copy();
+        if (ImGui::MenuItem("Paste at the cursor", "Ctrl+V")) ed.Paste(ed.aim);
         if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, !ed.selection.empty())) ed.Duplicate();
+        if (ImGui::MenuItem("Array / repeat...", nullptr, false, !ed.selection.empty())) ed.showArray = true;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Drop to floor", "End", false, !ed.selection.empty())) ed.DropToFloor();
+        if (ImGui::BeginMenu("Align to the yellow one", ed.selection.size() > 1)) {
+            const char* ax[] = {"X", "Y", "Z"};
+            const char* md[] = {"min", "centre", "max"};
+            for (int a = 0; a < 3; ++a)
+                for (int m = 0; m < 3; ++m)
+                    if (ImGui::MenuItem((std::string(ax[a]) + " " + md[m] + (a == 1 && m == 0 ? " (bottoms level)" : "")).c_str())) ed.Align(a, m);
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Space evenly", ed.selection.size() > 2)) {
+            if (ImGui::MenuItem("along X")) ed.Distribute(0);
+            if (ImGui::MenuItem("along Y")) ed.Distribute(1);
+            if (ImGui::MenuItem("along Z")) ed.Distribute(2);
+            ImGui::EndMenu();
+        }
+        if (ImGui::MenuItem("Frame selection", "F", false, !ed.selection.empty())) ed.FrameSelection();
         if (ImGui::MenuItem("Delete", "Del", false, !ed.selection.empty())) ed.DeleteSelection();
         if (ImGui::MenuItem("Select all", "Ctrl+A")) { ed.selection.clear(); for (const Entity& e : ed.Z().entities) if (!e.params.contains("_from")) ed.selection.insert(e.id); }
         if (ImGui::MenuItem("Clear selection", "Esc")) { ed.selection.clear(); ed.primary = -1; }
@@ -202,10 +224,13 @@ void DrawMenuBar(Editor& ed) {
     }
     if (ImGui::BeginMenu("Help")) {
         ImGui::TextUnformatted("Viewport: RMB + WASD/QE fly (Shift fast), LMB select (Ctrl add)");
-        ImGui::TextUnformatted("Tools: 1 select  2 move  3 wire  4 terrain  5 plants   Esc: back to select");
-        ImGui::TextUnformatted("Move: drag the red/green/blue arrows; Shift = no snap");
+        ImGui::TextUnformatted("Tools: 1 select  2 move  3 wire  4 terrain  5 plants  6 draw  7 scale  8 rotate  9 paint  0 measure   Esc: back to select");
+        ImGui::TextUnformatted("Move: drag the red/green/blue arrows; Shift = no snap; R / Shift+R turn 15 degrees");
+        ImGui::TextUnformatted("Draw: drag walls, floors, boxes, rooms (with a door), stairs, ramps, water on the ground");
+        ImGui::TextUnformatted("F frame selection, End drop to floor, Ctrl+C / Ctrl+V copy and paste at the cursor");
         ImGui::TextUnformatted("Wire: drag from a green terminal to another (right-click a wire to cut it)");
         ImGui::TextUnformatted("Ctrl+Z / Ctrl+Y undo/redo, Ctrl+D duplicate, Del delete, Ctrl+S save, P play");
+        ImGui::TextUnformatted("Objects that are one piece: give a part  weld = the name of another part (inspector)");
         ImGui::Separator();
         ImGui::MenuItem("ImGui demo (widgets reference)", nullptr, &ed.showDemo);
         ImGui::EndMenu();
@@ -216,49 +241,126 @@ void DrawMenuBar(Editor& ed) {
 }
 
 void DrawToolbar(Editor& ed) {
-    const float h = ImGui::GetFrameHeight() + 10.f;
-    if (!ImGui::BeginViewportSideBar("##toolbar", ImGui::GetMainViewport(), ImGuiDir_Up, h, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar)) { ImGui::End(); return; }
-    if (ImGui::BeginMenuBar()) {
-        auto toolBtn = [&](const char* label, Tool t, const char* tip) {
-            const bool on = ed.tool == t;
-            if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-            if (ImGui::Button(label)) { ed.tool = t; ed.placingActive = false; ed.wireFromEntity = 0; }
-            if (on) ImGui::PopStyleColor();
-            if (ImGui::BeginItemTooltip()) { ImGui::TextUnformatted(tip); ImGui::EndTooltip(); }
-            ImGui::SameLine();
-        };
-        toolBtn("Select (1)", Tool::Select, "Click things to select them (Ctrl+click adds).");
-        toolBtn("Move (2)", Tool::Move, "Drag the arrows to move the selection (snaps to the grid).");
-        toolBtn("Wire (3)", Tool::Wire, "Drag from one terminal to another to connect them. Right-click a wire to cut it.");
-        toolBtn("Terrain (4)", Tool::Terrain, "Sculpt the ground (brush settings in the World panel).");
-        toolBtn("Plants (5)", Tool::Plants, "Plant (LMB) or clear (Shift+LMB) plants.");
-        ImGui::Separator();
-        ImGui::Checkbox("Snap", &ed.snapOn);
+    const float row = ImGui::GetFrameHeight() + 4.f;
+    if (!ImGui::BeginViewportSideBar("##toolbar", ImGui::GetMainViewport(), ImGuiDir_Up, row * 2.f + 10.f, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDecoration)) { ImGui::End(); return; }
+    auto toolBtn = [&](const char* label, Tool t, const char* tip) {
+        const bool on = ed.tool == t;
+        if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+        if (ImGui::Button(label)) { ed.tool = t; ed.placingActive = false; ed.wireFromEntity = 0; ed.drawing = false; }
+        if (on) ImGui::PopStyleColor();
+        if (ImGui::BeginItemTooltip()) { ImGui::TextUnformatted(tip); ImGui::EndTooltip(); }
         ImGui::SameLine();
+    };
+    toolBtn("Select 1", Tool::Select, "Click things to select them (Ctrl+click adds, Alt picks a part inside an object).");
+    toolBtn("Move 2", Tool::Move, "Drag the arrows to move the selection (snaps to the grid).");
+    toolBtn("Rotate 8", Tool::Rotate, "Drag the ring to turn the selection about its centre.");
+    toolBtn("Scale 7", Tool::Scale, "Drag a face handle to resize (the far face stays put; Ctrl grows both sides).");
+    toolBtn("Draw 6", Tool::Draw, "Drag on the ground to build walls, floors, boxes, rooms, stairs, ramps or water.");
+    toolBtn("Wire 3", Tool::Wire, "Drag from one terminal to another to connect them. Right-click a wire to cut it.");
+    toolBtn("Paint 9", Tool::Paint, "Click things to colour them (Alt+click: pick a colour).");
+    toolBtn("Terrain 4", Tool::Terrain, "Sculpt the ground (brush settings in the World panel).");
+    toolBtn("Plants 5", Tool::Plants, "Plant (LMB) or clear (Shift+LMB) plants.");
+    toolBtn("Measure 0", Tool::Measure, "Click two points to see the distance.");
+    ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+    ImGui::SameLine();
+    if (ImGui::Button(ed.playing ? "Stop (P)" : "Play (P)")) {
+        ed.playing = !ed.playing;
+        ed.world.EndGrab();
+        ed.Rebuild();
+        ed.Log(ed.playing ? "Playing: physics, circuits and scripts run" : "Stopped: layout restored");
+    }
+
+    // second row: the current tool's settings
+    ImGui::Checkbox("Snap", &ed.snapOn);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(70);
+    ImGui::DragFloat("##snap", &ed.snap, 0.005f, 0.005f, 1.f, "%.3f m");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(60);
+    ImGui::DragFloat("##rsnap", &ed.rotSnap, 0.5f, 1.f, 90.f, "%.0f°");
+    if (ImGui::BeginItemTooltip()) { ImGui::TextUnformatted("Rotation step (R key, rotate ring)"); ImGui::EndTooltip(); }
+    ImGui::SameLine();
+    ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+    ImGui::SameLine();
+    switch (ed.tool) {
+    case Tool::Wire:
+        ImGui::TextUnformatted("New wires:");
+        ImGui::SameLine();
+        if (ImGui::RadioButton("in the wall", !ed.wireLoose)) ed.wireLoose = false;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("loose wire", ed.wireLoose)) ed.wireLoose = true;
+        if (ImGui::BeginItemTooltip()) { ImGui::TextUnformatted("A real wire with clips at both ends: it hangs, she can pull the clips off."); ImGui::EndTooltip(); }
+        if (ed.wireLoose) {
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(80);
+            ImGui::DragFloat("ohm/m", &ed.wireGauge, 0.001f, 0.f, 5.f, "%.3f");
+            ImGui::SameLine();
+            float c[3] = {ed.wireColor.r / 255.f, ed.wireColor.g / 255.f, ed.wireColor.b / 255.f};
+            if (ImGui::ColorEdit3("insulation", c, ImGuiColorEditFlags_NoInputs)) ed.wireColor = {(unsigned char)(c[0] * 255), (unsigned char)(c[1] * 255), (unsigned char)(c[2] * 255)};
+        }
+        break;
+    case Tool::Terrain:
+    case Tool::Plants:
+        ImGui::SetNextItemWidth(130);
+        ImGui::SliderFloat("radius", &ed.brushR, 0.2f, 20.f, "%.1f m", ImGuiSliderFlags_Logarithmic);
+        break;
+    case Tool::Draw: {
+        const char* names[] = {"Wall", "Floor", "Box", "Room", "Stairs", "Water", "Ramp"};
+        for (int k = 0; k < 7; ++k) {
+            if (ImGui::RadioButton(names[k], static_cast<int>(ed.shape) == k)) ed.shape = static_cast<DrawShape>(k);
+            ImGui::SameLine();
+        }
         ImGui::SetNextItemWidth(70);
-        ImGui::DragFloat("##snap", &ed.snap, 0.005f, 0.005f, 1.f, "%.3f m");
-        if (ed.tool == Tool::Wire) {
-            ImGui::Separator();
-            ImGui::TextUnformatted("New wires:");
+        ImGui::DragFloat(ed.shape == DrawShape::Water ? "depth" : "height", &ed.drawH, 0.01f, 0.02f, 20.f, "%.2f m");
+        ImGui::SameLine();
+        if (ed.shape == DrawShape::Wall || ed.shape == DrawShape::Floor || ed.shape == DrawShape::Room || ed.shape == DrawShape::Ramp) {
+            ImGui::SetNextItemWidth(70);
+            ImGui::DragFloat("thick", &ed.drawT, 0.005f, 0.01f, 1.f, "%.2f m");
             ImGui::SameLine();
-            if (ImGui::RadioButton("in the wall", !ed.wireLoose)) ed.wireLoose = false;
+        }
+        if (ed.shape == DrawShape::Stairs || ed.shape == DrawShape::Ramp) {
+            ImGui::SetNextItemWidth(70);
+            ImGui::DragFloat("width", &ed.stairW, 0.01f, 0.3f, 10.f, "%.2f m");
             ImGui::SameLine();
-            if (ImGui::RadioButton("loose wire", ed.wireLoose)) ed.wireLoose = true;
-            if (ImGui::BeginItemTooltip()) { ImGui::TextUnformatted("A real wire with clips at both ends: it hangs, she can pull the clips off."); ImGui::EndTooltip(); }
         }
-        if (ed.tool == Tool::Terrain || ed.tool == Tool::Plants) {
-            ImGui::Separator();
-            ImGui::SetNextItemWidth(110);
-            ImGui::SliderFloat("radius", &ed.brushR, 0.2f, 20.f, "%.1f m", ImGuiSliderFlags_Logarithmic);
+        if (ed.shape == DrawShape::Box) { ImGui::Checkbox("loose (she can move it)", &ed.drawDynamic); ImGui::SameLine(); }
+        if (ed.shape == DrawShape::Room) {
+            ImGui::Checkbox("door", &ed.roomDoor); ImGui::SameLine();
+            ImGui::Checkbox("ceiling", &ed.roomCeiling); ImGui::SameLine();
+            ImGui::Checkbox("floor", &ed.roomFloor); ImGui::SameLine();
         }
-        ImGui::Separator();
-        if (ImGui::Button(ed.playing ? "Stop (P)" : "Play (P)")) {
-            ed.playing = !ed.playing;
-            ed.world.EndGrab();
-            ed.Rebuild();
-            ed.Log(ed.playing ? "Playing: physics, circuits and scripts run" : "Stopped: layout restored");
+        float c[3] = {ed.drawColor.r / 255.f, ed.drawColor.g / 255.f, ed.drawColor.b / 255.f};
+        if (ImGui::ColorEdit3("colour", c, ImGuiColorEditFlags_NoInputs)) ed.drawColor = {(unsigned char)(c[0] * 255), (unsigned char)(c[1] * 255), (unsigned char)(c[2] * 255)};
+        break;
+    }
+    case Tool::Paint: {
+        float c[3] = {ed.paintColor.r / 255.f, ed.paintColor.g / 255.f, ed.paintColor.b / 255.f};
+        if (ImGui::ColorEdit3("paint", c, ImGuiColorEditFlags_NoInputs)) ed.paintColor = {(unsigned char)(c[0] * 255), (unsigned char)(c[1] * 255), (unsigned char)(c[2] * 255)};
+        static const Rgb swatches[] = {{238, 238, 236}, {205, 200, 190}, {130, 128, 122}, {50, 50, 55}, {150, 110, 75}, {105, 75, 50}, {190, 50, 45}, {220, 150, 50},
+                                       {230, 210, 90}, {90, 150, 70}, {70, 120, 170}, {90, 110, 140}, {150, 90, 160}, {230, 160, 170}};
+        for (const Rgb& w : swatches) {
+            ImGui::SameLine();
+            ImGui::PushID(&w);
+            if (ImGui::ColorButton("##sw", {w.r / 255.f, w.g / 255.f, w.b / 255.f, 1.f}, ImGuiColorEditFlags_NoTooltip, {18, 18})) ed.paintColor = w;
+            ImGui::PopID();
         }
-        ImGui::EndMenuBar();
+        break;
+    }
+    case Tool::Measure:
+        if (ed.measureStage > 0) ImGui::Text("%.3f m", Distance(ed.measureA, ed.measureB));
+        else ImGui::TextDisabled("click a point");
+        break;
+    default:
+        ImGui::TextDisabled("%zu selected", ed.selection.size());
+        if (!ed.selection.empty()) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("frame (F)")) ed.FrameSelection();
+            ImGui::SameLine();
+            if (ImGui::SmallButton("drop to floor (End)")) ed.DropToFloor();
+            ImGui::SameLine();
+            if (ImGui::SmallButton("array...")) ed.showArray = true;
+        }
+        break;
     }
     ImGui::End();
 }
@@ -308,9 +410,14 @@ void DrawOutliner(Editor& ed) {
             if (e.type == "plant") { ++plants; continue; }
             if (!match(e)) continue;
             row(e, false);
-            if (e.type == "prefab")
-                for (const Entity& p : ed.Z().entities)
-                    if (p.params.value("_from", std::string()) == e.name && match(p)) row(p, true);
+            if (e.type == "prefab") {
+                // its parts show while it (or one of them) is selected, or when filtering
+                bool open = !f.empty() || ed.selection.count(e.id);
+                for (int id : ed.selection) if (const Entity* s = ed.Z().Find(id); s && s->params.value("_from", std::string()) == e.name) open = true;
+                if (open)
+                    for (const Entity& p : ed.Z().entities)
+                        if (p.params.value("_from", std::string()) == e.name && match(p)) row(p, true);
+            }
         }
         if (plants && ImGui::TreeNode("plants", "Plants (%d)", plants)) {
             for (const Entity& e : ed.Z().entities) if (e.type == "plant" && match(e)) row(e, false);
@@ -574,9 +681,21 @@ void DrawInspector(Editor& ed) {
 // ---------------------------------------------------------------------------------------------------------------
 void DrawContent(Editor& ed) {
     if (!ImGui::Begin("Content", &ed.showContent)) { ImGui::End(); return; }
+    static std::string search;
+    ImGui::SetNextItemWidth(220);
+    ImGui::InputTextWithHint("##search", "search parts and objects", &search);
+    std::string low = search;
+    std::transform(low.begin(), low.end(), low.begin(), ::tolower);
+    auto matches = [&](const PaletteItem& p) {
+        if (low.empty()) return true;
+        std::string t = p.label + " " + p.type + " " + p.help + " " + p.category;
+        std::transform(t.begin(), t.end(), t.begin(), ::tolower);
+        return t.find(low) != std::string::npos;
+    };
     if (ImGui::BeginTabBar("content")) {
         std::vector<std::string> cats;
-        for (const PaletteItem& p : ed.palette) if (std::find(cats.begin(), cats.end(), p.category) == cats.end()) cats.push_back(p.category);
+        if (!low.empty()) cats.push_back("Found");
+        else for (const PaletteItem& p : ed.palette) if (std::find(cats.begin(), cats.end(), p.category) == cats.end()) cats.push_back(p.category);
         for (const std::string& c : cats) {
             if (!ImGui::BeginTabItem(c.c_str())) continue;
             const float w = ImGui::GetContentRegionAvail().x;
@@ -584,7 +703,7 @@ void DrawContent(Editor& ed) {
             const int per = std::max(1, static_cast<int>(w / 118.f));
             for (size_t i = 0; i < ed.palette.size(); ++i) {
                 const PaletteItem& p = ed.palette[i];
-                if (p.category != c) continue;
+                if (low.empty() ? p.category != c : !matches(p)) continue;
                 ImGui::PushID(static_cast<int>(i));
                 const bool on = ed.placingActive && ed.placing.label == p.label && ed.placing.category == p.category;
                 ImGui::PushStyleColor(ImGuiCol_Button, on ? ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive) : ImVec4(p.color.r / 400.f, p.color.g / 400.f, p.color.b / 400.f, 1.f));
@@ -605,8 +724,12 @@ void DrawContent(Editor& ed) {
                 if (++col % per) ImGui::SameLine();
             }
             ImGui::NewLine();
-            if (c == "Objects") {
-                ImGui::SeparatorText("make an object from the selection");
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("+ Object")) {
+            {
+                ImGui::TextWrapped("Select the parts (Ctrl+click), name the object, save it: it appears in the Content panel and can be placed many times. "
+                                   "Wiring between the parts is kept. Give parts a `weld` setting to make a movable object one piece.");
                 static std::string objName, objDesc;
                 ImGui::SetNextItemWidth(160);
                 ImGui::InputTextWithHint("##on", "object name", &objName);
@@ -884,6 +1007,28 @@ void DrawDialogs(Editor& ed) {
         for (const std::string& z : ed.zones) if (ImGui::Selectable(z.c_str())) { ed.Open(ed.root + "/zones/" + z); ImGui::CloseCurrentPopup(); }
         if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
+    }
+    if (ed.showArray) {
+        ImGui::SetNextWindowSize({380, 0}, ImGuiCond_Appearing);
+        if (ImGui::Begin("Array / repeat", &ed.showArray, ImGuiWindowFlags_NoDocking)) {
+            ImGui::TextWrapped("Makes copies of the selection (with its wiring), each one step further on.");
+            ImGui::DragInt("count (incl. the original)", &ed.arrayCount, 0.2f, 2, 200);
+            float o[3] = {ed.arrayOffset.x, ed.arrayOffset.y, ed.arrayOffset.z};
+            if (ImGui::DragFloat3("step m", o, 0.01f)) ed.arrayOffset = {o[0], o[1], o[2]};
+            ImGui::DragFloat("turn each step °", &ed.arrayYaw, 0.5f, -360, 360);
+            if (ImGui::SmallButton("fence line (2 m in x)")) { ed.arrayOffset = {2, 0, 0}; ed.arrayYaw = 0; }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("stack (up)")) {
+                float h = 0.3f;
+                if (const Entity* e = ed.Sel()) h = e->type == "prefab" ? 1.f : e->size.y;
+                ed.arrayOffset = {0, h + 0.002f, 0};
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("ring of 8")) { ed.arrayCount = 8; ed.arrayOffset = {0, 0, 0}; ed.arrayYaw = 45; }
+            if (ImGui::BeginItemTooltip()) { ImGui::TextUnformatted("Turns each copy about the selection's centre: select something away from the middle (or two things) to make a ring."); ImGui::EndTooltip(); }
+            if (ImGui::Button("Make copies", {140, 0}) && !ed.selection.empty()) { ed.ArraySelection(ed.arrayCount, ed.arrayOffset, ed.arrayYaw); ed.showArray = false; }
+        }
+        ImGui::End();
     }
     if (ImGui::BeginPopupModal("Save map as", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         static std::string name;

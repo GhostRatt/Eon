@@ -1,0 +1,22 @@
+{
+  "name": "bookshelf",
+  "category": "Furniture",
+  "description": "Bookshelf 0.8 x 1.8 m with books she can take out (0.4 kg each).",
+  "parts": [
+    {"name": "Back", "type": "static", "pos": [0, 0.9, -0.14], "size": [0.8, 1.8, 0.02], "color": [105, 75, 50]},
+    {"name": "SideL", "type": "static", "pos": [-0.39, 0.9, 0], "size": [0.02, 1.8, 0.3], "color": [105, 75, 50]},
+    {"name": "SideR", "type": "static", "pos": [0.39, 0.9, 0], "size": [0.02, 1.8, 0.3], "color": [105, 75, 50]},
+    {"name": "Top", "type": "static", "pos": [0, 1.79, 0], "size": [0.76, 0.02, 0.3], "color": [105, 75, 50]},
+    {"name": "Bottom", "type": "static", "pos": [0, 0.04, 0], "size": [0.76, 0.08, 0.3], "color": [105, 75, 50]},
+    {"name": "Shelf1", "type": "static", "pos": [0, 0.51, 0], "size": [0.76, 0.02, 0.28], "color": [105, 75, 50]},
+    {"name": "Shelf2", "type": "static", "pos": [0, 0.94, 0], "size": [0.76, 0.02, 0.28], "color": [105, 75, 50]},
+    {"name": "Shelf3", "type": "static", "pos": [0, 1.37, 0], "size": [0.76, 0.02, 0.28], "color": [105, 75, 50]},
+    {"name": "Book1", "type": "dynamic", "pos": [-0.3, 0.63, 0.02], "size": [0.035, 0.22, 0.16], "color": [170, 50, 40], "mass": 0.4},
+    {"name": "Book2", "type": "dynamic", "pos": [-0.255, 1.06, 0.02], "size": [0.035, 0.22, 0.16], "color": [40, 90, 150], "mass": 0.4},
+    {"name": "Book3", "type": "dynamic", "pos": [-0.21, 1.49, 0.02], "size": [0.035, 0.22, 0.16], "color": [60, 130, 70], "mass": 0.4},
+    {"name": "Book4", "type": "dynamic", "pos": [-0.165, 0.63, 0.02], "size": [0.035, 0.22, 0.16], "color": [200, 170, 60], "mass": 0.4},
+    {"name": "Book5", "type": "dynamic", "pos": [-0.12, 1.06, 0.02], "size": [0.035, 0.22, 0.16], "color": [170, 50, 40], "mass": 0.4},
+    {"name": "Book6", "type": "dynamic", "pos": [-0.075, 1.49, 0.02], "size": [0.035, 0.22, 0.16], "color": [40, 90, 150], "mass": 0.4}
+  ],
+  "links": []
+}

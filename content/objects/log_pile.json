@@ -1,0 +1,11 @@
+{
+  "name": "log_pile",
+  "category": "Outdoor",
+  "description": "Three loose logs (they roll, they float).",
+  "parts": [
+    {"name": "Log1", "type": "dynamic", "pos": [-0.11, 0.1, 0], "size": [0.2, 0.2, 1.4], "color": [110, 80, 55], "mass": 18.0},
+    {"name": "Log2", "type": "dynamic", "pos": [0.11, 0.1, 0], "size": [0.2, 0.2, 1.4], "color": [110, 80, 55], "mass": 18.0},
+    {"name": "Log3", "type": "dynamic", "pos": [0.0, 0.3, 0], "size": [0.2, 0.2, 1.4], "color": [110, 80, 55], "mass": 18.0}
+  ],
+  "links": []
+}

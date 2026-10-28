@@ -146,6 +146,11 @@ void Physics::DisableCollision(uint32_t group, uint32_t subA, uint32_t subB) {
     impl_->groups[group]->DisableCollision(subA, subB);
 }
 
+void Physics::SetGroup(BodyHandle b, uint32_t group, uint32_t subGroup) {
+    if (b == kNoBody || group == 0 || group >= impl_->groups.size()) return;
+    impl_->BI().SetCollisionGroup(Id(b), JPH::CollisionGroup(impl_->groups[group], group, subGroup));
+}
+
 BodyHandle Physics::CreateBody(const BodyDesc& d) {
     JPH::ShapeRefC shape;
     if (d.shape == Shape::HeightField) {

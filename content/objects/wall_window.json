@@ -1,0 +1,13 @@
+{
+  "name": "wall_window",
+  "category": "Building",
+  "description": "2 m wall with a 1 x 1 m window opening.",
+  "parts": [
+    {"name": "Left", "type": "static", "pos": [-0.75, 1.3, 0], "size": [0.5, 2.6, 0.1], "color": [205, 200, 190]},
+    {"name": "Right", "type": "static", "pos": [0.75, 1.3, 0], "size": [0.5, 2.6, 0.1], "color": [205, 200, 190]},
+    {"name": "Below", "type": "static", "pos": [0, 0.45, 0], "size": [1.0, 0.9, 0.1], "color": [205, 200, 190]},
+    {"name": "Above", "type": "static", "pos": [0, 2.25, 0], "size": [1.0, 0.7, 0.1], "color": [205, 200, 190]},
+    {"name": "Sill", "type": "static", "pos": [0, 0.91, 0.04], "size": [1.04, 0.03, 0.18], "color": [238, 238, 236]}
+  ],
+  "links": []
+}

@@ -1,0 +1,13 @@
+{
+  "name": "bathtub",
+  "category": "Kitchen & bath",
+  "description": "Bathtub (150 l): the tap lever fills it, the plug switch empties it.",
+  "parts": [
+    {"name": "Tub", "type": "bowl", "pos": [0, 0.27, 0], "size": [0.75, 0.54, 1.7], "color": [238, 238, 236], "params": {"capacity": 150000, "drain": "#Plug"}},
+    {"name": "Spout", "type": "tap", "pos": [0, 0.72, -0.78], "size": [0.04, 0.04, 0.12], "color": [180, 182, 188], "params": {"valve": "#Lever", "rate": 250, "speed": 0.6}},
+    {"name": "WallPlate", "type": "static", "pos": [0, 0.75, -0.87], "size": [0.4, 0.2, 0.02], "color": [200, 210, 215]},
+    {"name": "Lever", "type": "lever", "pos": [0.12, 0.75, -0.85], "size": [0.04, 0.08, 0.04], "color": [180, 182, 188], "params": {"axis": [0, 0, 1], "handle": 0.08, "throw": 0.6, "detent": 0.3, "leverMass": 0.05}},
+    {"name": "Plug", "type": "switch", "pos": [-0.12, 0.75, -0.85], "size": [0.05, 0.07, 0.02], "color": [60, 60, 60], "params": {"axis": [0, 0, 1]}}
+  ],
+  "links": []
+}

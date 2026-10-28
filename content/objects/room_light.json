@@ -1,0 +1,11 @@
+{
+  "name": "room_light",
+  "category": "Gadgets",
+  "description": "Wall light switch and a ceiling light 2.5 m up, wired inside the wall. Put it against a wall.",
+  "parts": [
+    {"name": "Plate", "type": "switch", "pos": [0, 1.2, 0.0], "size": [0.08, 0.12, 0.02], "color": [238, 238, 236], "params": {"axis": [0, 0, 1]}},
+    {"name": "Mains", "type": "battery", "pos": [0, 1.0, -0.04], "size": [0.06, 0.15, 0.06], "color": [60, 60, 60], "params": {"voltage": 12, "internalR": 0.05, "capacityAh": 50}},
+    {"name": "Light", "type": "lamp", "pos": [0, 2.47, 0.8], "size": [0.2, 0.06, 0.2], "color": [250, 245, 225], "params": {"ratedPower": 40, "ratedVoltage": 12}}
+  ],
+  "links": [["Mains", 0, "Plate", 0], ["Plate", 1, "Light", 0], ["Light", 1, "Mains", 1]]
+}

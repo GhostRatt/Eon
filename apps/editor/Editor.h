@@ -38,7 +38,8 @@ struct PaletteItem {
     std::string plugin;   // added by a plugin
 };
 
-enum class Tool { Select, Move, Wire, Terrain, Plants, Place };
+enum class Tool { Select, Move, Wire, Terrain, Plants, Place, Draw, Scale, Rotate, Paint, Measure };
+enum class DrawShape { Wall, Floor, Box, Room, Stairs, Water, Ramp };
 enum class Brush { Raise, Lower, Smooth, Flatten, Noise, Water };
 
 struct PluginTool {
@@ -76,6 +77,7 @@ struct Editor {
     Vec3 gizmoStart, gizmoGrab;
     std::map<int, Vec3> dragStartPos;
     PaletteItem placing;
+    float placeYaw = 0.f;        // R / Shift+R while placing
     bool placingActive = false;
 
     // wires
@@ -83,6 +85,33 @@ struct Editor {
     bool wireLoose = false;      // false: in-wall (ideal link), true: a real wire with clips she can pull off
     float wireGauge = 0.02f;     // ohm per metre
     Rgb wireColor{180, 60, 40};
+
+    // draw (drag shapes on the ground)
+    DrawShape shape = DrawShape::Wall;
+    bool drawing = false, drawDynamic = false, roomDoor = true, roomCeiling = true, roomFloor = false;
+    Vec3 drawA, drawB;
+    float drawH = 2.6f, drawT = 0.1f, stairW = 1.0f;
+    Rgb drawColor{205, 200, 190};
+
+    // scale / rotate / paint / measure
+    int scaleFace = -1;                   // 0..5 = +x -x +y -y +z -z (local)
+    Vec3 scaleStartPos, scaleStartSize;
+    float scaleStartMass = 0.f;
+    float scaleGrab = 0.f;
+    bool rotating = false;
+    float rotStartAngle = 0.f, rotDelta = 0.f;
+    Vec3 rotCenter;
+    std::map<int, std::pair<Vec3, float>> rotStart;   // id -> pos, yaw
+    Rgb paintColor{200, 80, 60};
+    int measureStage = 0;                 // 0 none, 1 A set, 2 both set
+    Vec3 measureA, measureB;
+
+    // clipboard (entities + their links, as JSON) and the array dialog
+    std::string clipboard;
+    bool showArray = false;
+    int arrayCount = 4;
+    Vec3 arrayOffset{1.f, 0.f, 0.f};
+    float arrayYaw = 0.f;
 
     // terrain / plants
     Brush brush = Brush::Raise;
@@ -133,6 +162,14 @@ struct Editor {
     void DeleteSelection();
     void Duplicate();
     Entity* InstanceOf(const Entity* e);
+    std::vector<int> TopLevelSelection();                 // selected things that can be moved (not parts inside an object)
+    void DropToFloor();                                   // each selected thing falls onto what's under it
+    void Align(int axis, int mode);                       // mode 0 min, 1 centre, 2 max: line up with the primary
+    void Distribute(int axis);                            // even spacing between the outermost two
+    void ArraySelection(int count, const Vec3& offset, float yawStep);
+    void Copy();
+    void Paste(const Vec3& at);
+    void FrameSelection();
     bool Electrical(const Entity& e) const;
 };
 
@@ -151,6 +188,8 @@ void DrawDialogs(Editor& ed);
 // Tools.cpp
 void UpdateViewport(Editor& ed, float dt);   // input in the 3D view
 void DrawViewportOverlay(Editor& ed);        // inside BeginMode3D
+void DrawViewportHud(Editor& ed);
+int FinishDraw(Editor& ed);                  // builds what the draw tool dragged (drawA -> drawB)            // ImGui text over the view (sizes, distances, tool hints)
 // Plugins.cpp
 void LoadPlugins(Editor& ed);
 void UnloadPlugins(Editor& ed);

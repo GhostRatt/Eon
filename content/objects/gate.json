@@ -1,0 +1,11 @@
+{
+  "name": "gate",
+  "category": "Outdoor",
+  "description": "1 m garden gate between two posts (swings both ways a little, light latch).",
+  "parts": [
+    {"name": "PostA", "type": "static", "pos": [-0.55, 0.6, 0], "size": [0.1, 1.2, 0.1], "color": [105, 75, 50]},
+    {"name": "PostB", "type": "static", "pos": [0.55, 0.6, 0], "size": [0.1, 1.2, 0.1], "color": [105, 75, 50]},
+    {"name": "Gate", "type": "door", "pos": [0, 0.55, 0.0], "size": [0.98, 0.95, 0.04], "color": [150, 110, 75], "mass": 8.0, "params": {"hingeSide": "left", "frame": "$PostA", "swing": 100, "seal": 1.0, "friction": 0.4}}
+  ],
+  "links": []
+}

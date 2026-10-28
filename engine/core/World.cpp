@@ -1,6 +1,7 @@
 #include "World.h"
 
 #include <algorithm>
+#include <functional>
 #include <cmath>
 
 namespace eon {
@@ -92,6 +93,7 @@ void World::Reset() {
     kinematic_.clear();
     ++generation_;
     joints_.clear();
+    welds_.clear();
     grab_ = {};   // its bodies were removed by Clear()
     doors_.clear(); colds_.clear(); terrains_.clear(); waters_.clear(); plants_.clear(); fruits_.clear(); seeds_.clear(); plantClock_ = 0.0;
     taps_.clear(); containers_.clear(); puddles_.clear(); foods_.clear(); heaters_.clear(); streamDraw_.clear();
@@ -111,6 +113,7 @@ void World::Reset() {
         }
         BuildRope(e, ends);
     }
+    BuildWelds();
 
     for (const TerminalLink& l : zone_.links) {
         const Entity* a = zone_.Find(l.entityA);
@@ -467,6 +470,7 @@ void World::FixedStep(float dt) {
         ApplyForces(dt);
         physics_->Step(dt);
         UpdateClips(dt);
+        StepWelds(dt);
         if (grab_.joint != kNoConstraint) {
             // Grip slips if the object resists harder than the hand can hold for ~50 ms.
             grab_.overloadSteps = physics_->ConstraintForce(grab_.joint, dt) > grab_.maxForce ? grab_.overloadSteps + 1 : 0;
@@ -808,6 +812,55 @@ void World::Detach(int joint) {
     if (joint < 0 || joint >= (int)joints_.size() || joints_[joint] == kNoConstraint) return;
     physics_->RemoveConstraint(joints_[joint]);
     joints_[joint] = kNoConstraint;
+}
+
+void World::BuildWelds() {
+    for (const Entity& e : zone_.entities) {
+        const auto it = e.params.find("weld");
+        if (it == e.params.end()) continue;
+        const Entity* to = nullptr;
+        if (it->is_number_integer()) to = zone_.Find(it->get<int>());
+        else if (it->is_string()) for (const Entity& o : zone_.entities) if (o.name == it->get<std::string>()) { to = &o; break; }
+        const int ba = MainBodyOf(e.id), bb = to ? MainBodyOf(to->id) : -1;
+        if (!to || ba < 0 || to->id == e.id) { ScriptLogLine(e.name + ": weld target not found"); continue; }
+        const BodyHandle ha = bodies_[ba].h, hb = bb >= 0 ? bodies_[bb].h : kNoBody;
+        const bool da = physics_->IsDynamic(ha), db = hb != kNoBody && physics_->IsDynamic(hb);
+        if (!da && !db) continue;   // two fixed things: nothing to hold
+        WeldRt w;
+        w.a = e.id; w.b = to->id;
+        w.c = da ? physics_->AddFixed(ha, db ? hb : kNoBody) : physics_->AddFixed(hb, kNoBody);
+        w.breakN = e.params.value("weldBreakN", 0.f);
+        welds_.push_back(w);
+    }
+    // welded pieces of one object don't collide with each other (they touch or overlap a little)
+    std::unordered_map<int, int> root;
+    std::function<int(int)> find = [&](int x) { auto it = root.find(x); if (it == root.end()) { root[x] = x; return x; } return it->second == x ? x : (it->second = find(it->second)); };
+    for (const WeldRt& w : welds_) root[find(w.a)] = find(w.b);
+    std::unordered_map<int, std::vector<BodyHandle>> groups;
+    for (auto& [id, r] : root) {
+        const int b = MainBodyOf(id);
+        if (b >= 0 && physics_->IsDynamic(bodies_[b].h)) groups[find(id)].push_back(bodies_[b].h);
+    }
+    for (auto& [r, hs] : groups) {
+        if (hs.size() < 2) continue;
+        const uint32_t g = physics_->NewGroup(static_cast<uint32_t>(hs.size()));
+        for (uint32_t i = 0; i < hs.size(); ++i) {
+            for (uint32_t j = i + 1; j < hs.size(); ++j) physics_->DisableCollision(g, i, j);
+            physics_->SetGroup(hs[i], g, i);
+        }
+    }
+}
+
+void World::StepWelds(float dt) {
+    for (WeldRt& w : welds_) {
+        if (w.c == kNoConstraint || w.breakN <= 0.f) continue;
+        if (physics_->ConstraintForce(w.c, dt) > w.breakN) { physics_->RemoveConstraint(w.c); w.c = kNoConstraint; }
+    }
+}
+
+bool World::Welded(int a, int b) const {
+    for (const WeldRt& w : welds_) if (w.c != kNoConstraint && ((w.a == a && w.b == b) || (w.a == b && w.b == a))) return true;
+    return false;
 }
 
 float World::JointForce(int joint) const {

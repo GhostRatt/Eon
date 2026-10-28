@@ -1,0 +1,12 @@
+{
+  "name": "stove",
+  "category": "Kitchen & bath",
+  "description": "Electric hob on a cabinet: the knob switch heats the plate (1 kW, wired in the wall).",
+  "parts": [
+    {"name": "Body", "type": "static", "pos": [0, 0.43, 0], "size": [0.6, 0.86, 0.6], "color": [238, 238, 236]},
+    {"name": "Hob", "type": "heater", "pos": [0, 0.875, 0.02], "size": [0.22, 0.03, 0.22], "color": [40, 40, 42], "params": {"ratedPower": 1000, "ratedVoltage": 230}},
+    {"name": "Knob", "type": "switch", "pos": [0.2, 0.78, 0.31], "size": [0.06, 0.06, 0.02], "color": [40, 40, 42], "params": {"axis": [0, 0, 1]}},
+    {"name": "Supply", "type": "battery", "pos": [0, 0.4, 0], "size": [0.1, 0.1, 0.1], "color": [60, 60, 60], "params": {"voltage": 230, "internalR": 0.5, "capacityAh": 500}}
+  ],
+  "links": [["Supply", 0, "Knob", 0], ["Knob", 1, "Hob", 0], ["Hob", 1, "Supply", 1]]
+}

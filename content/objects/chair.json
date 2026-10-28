@@ -1,0 +1,14 @@
+{
+  "name": "chair",
+  "category": "Furniture",
+  "description": "Wooden chair (7 kg): one piece, she can drag or carry it, sit on it, tip it over.",
+  "parts": [
+    {"name": "Seat", "type": "dynamic", "pos": [0, 0.45, 0], "size": [0.44, 0.04, 0.42], "color": [150, 110, 75], "mass": 2.5},
+    {"name": "Leg1", "type": "dynamic", "pos": [-0.19, 0.215, -0.18], "size": [0.035, 0.43, 0.035], "color": [150, 110, 75], "mass": 0.4, "params": {"weld": "$Seat"}},
+    {"name": "Leg2", "type": "dynamic", "pos": [0.19, 0.215, -0.18], "size": [0.035, 0.43, 0.035], "color": [150, 110, 75], "mass": 0.4, "params": {"weld": "$Seat"}},
+    {"name": "Leg3", "type": "dynamic", "pos": [-0.19, 0.215, 0.18], "size": [0.035, 0.43, 0.035], "color": [150, 110, 75], "mass": 0.4, "params": {"weld": "$Seat"}},
+    {"name": "Leg4", "type": "dynamic", "pos": [0.19, 0.215, 0.18], "size": [0.035, 0.43, 0.035], "color": [150, 110, 75], "mass": 0.4, "params": {"weld": "$Seat"}},
+    {"name": "Back", "type": "dynamic", "pos": [0, 0.72, -0.195], "size": [0.44, 0.5, 0.03], "color": [150, 110, 75], "mass": 1.4, "params": {"weld": "$Seat"}}
+  ],
+  "links": []
+}

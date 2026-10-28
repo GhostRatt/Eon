@@ -1,0 +1,14 @@
+{
+  "name": "stool",
+  "category": "Furniture",
+  "description": "Kitchen stool (3 kg), one piece.",
+  "parts": [
+    {"name": "Seat", "type": "dynamic", "pos": [0, 0.62, 0], "size": [0.32, 0.04, 0.32], "color": [105, 75, 50], "mass": 1.2},
+    {"name": "Leg1", "type": "dynamic", "pos": [-0.13, 0.3, -0.13], "size": [0.03, 0.6, 0.03], "color": [105, 75, 50], "mass": 0.3, "params": {"weld": "$Seat"}},
+    {"name": "Leg2", "type": "dynamic", "pos": [0.13, 0.3, -0.13], "size": [0.03, 0.6, 0.03], "color": [105, 75, 50], "mass": 0.3, "params": {"weld": "$Seat"}},
+    {"name": "Leg3", "type": "dynamic", "pos": [-0.13, 0.3, 0.13], "size": [0.03, 0.6, 0.03], "color": [105, 75, 50], "mass": 0.3, "params": {"weld": "$Seat"}},
+    {"name": "Leg4", "type": "dynamic", "pos": [0.13, 0.3, 0.13], "size": [0.03, 0.6, 0.03], "color": [105, 75, 50], "mass": 0.3, "params": {"weld": "$Seat"}},
+    {"name": "Ring", "type": "dynamic", "pos": [0, 0.22, 0.13], "size": [0.26, 0.02, 0.02], "color": [105, 75, 50], "mass": 0.2, "params": {"weld": "$Seat"}}
+  ],
+  "links": []
+}

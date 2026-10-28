@@ -1811,6 +1811,123 @@ static void TestNewMaps(const std::string& contentDir) {
     CHECK(MakeMap(s).entities.size() == 1);
 }
 
+// Every stock object loads, settles on the floor without flying apart, and the welded / wired ones work.
+static void TestStockObjects(const std::string& contentDir) {
+    const auto objects = ListPrefabs(contentDir);
+    CHECK(objects.size() >= 30);
+    int bad = 0;
+    for (const PrefabInfo& o : objects) {
+        if (o.name == "vending_machine") continue;   // needs its scripts' coins; covered by TestPrefabs
+        Zone z = FloorZone(0.f, 0.f);
+        Entity inst; inst.id = 50; inst.name = "Obj"; inst.type = "prefab"; inst.params = {{"prefab", o.name}};
+        z.entities.push_back(inst);
+        World w;
+        w.SetContentRoot(contentDir);
+        w.SetZone(z);
+        std::vector<std::pair<int, Vec3>> start;
+        for (const Entity& e : w.GetZone().entities)
+            if (e.params.contains("_from")) { const int b = w.MainBodyOf(e.id); if (b >= 0) start.push_back({b, w.BodyPosition(b)}); }
+        w.Advance(2.0);
+        for (const auto& [b, p0] : start) {
+            const Vec3 p = w.BodyPosition(b);
+            if (!std::isfinite(p.x + p.y + p.z) || Distance(p, p0) > 0.25f || p.y < -0.05f) { ++bad; std::printf("    %s: body %d moved %.2f m\n", o.name.c_str(), b, Distance(p, p0)); }
+        }
+        for (const std::string& l : w.ScriptLog()) if (l.find("weld") != std::string::npos) { ++bad; std::printf("    %s: %s\n", o.name.c_str(), l.c_str()); }
+        // every switch, lever and button in it can be worked
+        std::vector<int> controls;
+        for (const Entity& e : w.GetZone().entities) if (e.params.contains("_from") && (e.type == "switch" || e.type == "lever" || e.type == "button")) controls.push_back(e.id);
+        for (int id : controls) {
+            w.DebugActuate(id, true);
+            w.Advance(0.4);
+            if (!w.PartOf(id) || !w.PartOf(id)->closed) { ++bad; std::printf("    %s: %s won't switch on\n", o.name.c_str(), w.GetZone().Find(id)->name.c_str()); }
+            w.DebugActuate(id, false);
+        }
+    }
+    CHECK(bad == 0);
+
+    // a welded chair is one piece: drag it by its seat, every part comes along at the same offsets
+    {
+        Zone z = FloorZone(0.f, 0.f);
+        Entity inst; inst.id = 50; inst.name = "Chair"; inst.type = "prefab"; inst.params = {{"prefab", "chair"}};
+        z.entities.push_back(inst);
+        World w;
+        w.SetContentRoot(contentDir);
+        w.SetZone(z);
+        w.Advance(0.5);
+        const Entity* seat = w.GetZone().FindByName("Chair.Seat");
+        const Entity* leg = w.GetZone().FindByName("Chair.Leg1");
+        const Entity* back = w.GetZone().FindByName("Chair.Back");
+        CHECK(seat && leg && back);
+        if (seat && leg && back) {
+            const int bs = w.MainBodyOf(seat->id), bl = w.MainBodyOf(leg->id), bb = w.MainBodyOf(back->id);
+            CHECK(w.Welded(seat->id, leg->id) && w.Welded(seat->id, back->id));
+            const float d0 = Distance(w.BodyPosition(bs), w.BodyPosition(bl)), d1 = Distance(w.BodyPosition(bs), w.BodyPosition(bb));
+            const Vec3 s0 = w.BodyPosition(bs);
+            const Vec3 low = w.BodyPosition(bl);
+            w.SetPush(bs, {s0.x, low.y - 0.15f, s0.z}, {60.f, 0.f, 0.f}, 0.5f);   // shove it sideways, low down like a foot would
+            w.Advance(1.5);
+            const Vec3 s1 = w.BodyPosition(bs);
+            CHECK(s1.x - s0.x > 0.1f);                                                       // it slid
+            CHECK(std::fabs(Distance(s1, w.BodyPosition(bl)) - d0) < 0.01f);               // legs stayed on
+            CHECK(std::fabs(Distance(s1, w.BodyPosition(bb)) - d1) < 0.01f);               // back stayed on
+            CHECK(w.BodyPosition(bl).y < 0.3f);                                             // still standing (legs down)
+        }
+    }
+    // a weld with a break force snaps under a hard pull
+    {
+        Zone z = FloorZone(0.f, 0.f);
+        z.entities.push_back(Ent(10, "Base", "dynamic", {0, 0.1f, 0}, {0.2f, 0.2f, 0.2f}, 2.f));
+        z.entities.push_back(Ent(11, "Knob", "dynamic", {0, 0.25f, 0}, {0.05f, 0.1f, 0.05f}, 0.1f, {{"weld", "Base"}, {"weldBreakN", 20.0}}));
+        World w;
+        w.SetZone(z);
+        w.Advance(0.3);
+        CHECK(w.Welded(10, 11));
+        w.SetPush(w.MainBodyOf(11), w.BodyPosition(w.MainBodyOf(11)), {0.f, 80.f, 0.f}, 0.5f);
+        w.Advance(0.5);
+        CHECK(!w.Welded(10, 11));
+        CHECK(w.BodyPosition(w.MainBodyOf(11)).y > 0.4f);   // pulled off, flew up
+    }
+    // saved as an object from the editor, the weld still points at its sibling
+    {
+        const std::string tmp = (std::filesystem::temp_directory_path() / "eon_test_objects").string();
+        std::vector<Entity> parts = {Ent(10, "Base_10", "dynamic", {1, 0.1f, 0}, {0.2f, 0.2f, 0.2f}, 2.f),
+                                     Ent(11, "Knob_11", "dynamic", {1, 0.25f, 0}, {0.05f, 0.1f, 0.05f}, 0.1f, {{"weld", "Base_10"}})};
+        CHECK(SavePrefab(tmp, "knobbed", "test", parts, {}, {1, 0, 0}));
+        Zone z = FloorZone(0.f, 0.f);
+        Entity inst; inst.id = 7; inst.name = "K"; inst.type = "prefab"; inst.params = {{"prefab", "knobbed"}};
+        z.entities.push_back(inst);
+        World w;
+        w.SetContentRoot(tmp);
+        w.SetZone(z);
+        const Entity* knob = w.GetZone().FindByName("K.Knob_11");
+        CHECK(knob && knob->params.value("weld", std::string()) == "K.Base_10");
+        CHECK(knob && w.Welded(knob->id, w.GetZone().FindByName("K.Base_10")->id));
+        std::error_code ec;
+        std::filesystem::remove_all(tmp, ec);
+    }
+    // wired objects: desk lamp switch lights the bulb; sink handle runs the tap into the basin
+    {
+        Zone z = FloorZone(0.f, 0.f);
+        Entity a; a.id = 50; a.name = "Lamp"; a.type = "prefab"; a.params = {{"prefab", "desk_lamp"}};
+        Entity b; b.id = 51; b.name = "Sink"; b.type = "prefab"; b.pos = {2.f, 0.f, 0.f}; b.params = {{"prefab", "kitchen_sink"}};
+        z.entities.push_back(a);
+        z.entities.push_back(b);
+        World w;
+        w.SetContentRoot(contentDir);
+        w.SetZone(z);
+        const int sw = w.GetZone().FindByName("Lamp.Switch")->id, bulb = w.GetZone().FindByName("Lamp.Bulb")->id;
+        w.Advance(0.2);
+        CHECK(w.PartOf(bulb)->brightness < 0.05);
+        w.DebugActuate(sw, true);
+        w.Advance(0.3);
+        CHECK(w.PartOf(bulb)->brightness > 0.5);
+        const int handle = w.GetZone().FindByName("Sink.Handle")->id, basin = w.GetZone().FindByName("Sink.Basin")->id;
+        w.DebugActuate(handle, true);
+        w.Advance(4.0);
+        CHECK(w.ContainerMl(basin) > 150.f);
+    }
+}
+
 static void TestJennyDrinksEatsPees() {
     Zone z = FloorZone(0.f, 0.f);
     z.entities.push_back(Ent(20, "Tap", "tap", {3.f, 2.f, 3.f}, {0.04f, 0.04f, 0.04f}, 0.f, {{"rate", 40.0}}));
@@ -2060,6 +2177,7 @@ int main(int argc, char** argv) {
     RUN(TestPlants);
     RUN(TestPicksFruit);
     RUN(TestNewMaps, content);
+    RUN(TestStockObjects, content);
     RUN(TestWalksOnTerrain, content);
     RUN(TestJennyDrinksEatsPees);
     RUN(TestStepAndClimb);

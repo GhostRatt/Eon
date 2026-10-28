@@ -1,0 +1,11 @@
+{
+  "name": "wall_doorway",
+  "category": "Building",
+  "description": "2 m wall with a doorway (fits room_door).",
+  "parts": [
+    {"name": "Left", "type": "static", "pos": [-0.76, 1.3, 0], "size": [0.48, 2.6, 0.1], "color": [205, 200, 190]},
+    {"name": "Right", "type": "static", "pos": [0.76, 1.3, 0], "size": [0.48, 2.6, 0.1], "color": [205, 200, 190]},
+    {"name": "Over", "type": "static", "pos": [0, 2.36, 0], "size": [1.04, 0.48, 0.1], "color": [205, 200, 190]}
+  ],
+  "links": []
+}

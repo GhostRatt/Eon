@@ -1,0 +1,16 @@
+{
+  "name": "desk",
+  "category": "Furniture",
+  "description": "Fixed desk with a side cabinet that has a door.",
+  "parts": [
+    {"name": "Top", "type": "static", "pos": [0, 0.74, 0], "size": [1.3, 0.03, 0.62], "color": [150, 110, 75]},
+    {"name": "SideL", "type": "static", "pos": [-0.63, 0.3625, 0], "size": [0.03, 0.725, 0.6], "color": [150, 110, 75]},
+    {"name": "Modesty", "type": "static", "pos": [0, 0.45, -0.28], "size": [1.2, 0.5, 0.02], "color": [150, 110, 75]},
+    {"name": "CabSide", "type": "static", "pos": [0.2, 0.3625, 0], "size": [0.02, 0.725, 0.6], "color": [150, 110, 75]},
+    {"name": "CabR", "type": "static", "pos": [0.63, 0.3625, 0], "size": [0.03, 0.725, 0.6], "color": [150, 110, 75]},
+    {"name": "CabShelf", "type": "static", "pos": [0.415, 0.36, 0], "size": [0.41, 0.02, 0.56], "color": [150, 110, 75]},
+    {"name": "CabBottom", "type": "static", "pos": [0.415, 0.03, 0], "size": [0.41, 0.06, 0.56], "color": [150, 110, 75]},
+    {"name": "CabDoor", "type": "door", "pos": [0.415, 0.39, 0.312], "size": [0.4, 0.66, 0.02], "color": [105, 75, 50], "mass": 2.0, "params": {"hingeSide": "right", "frame": "$CabR", "swing": 100, "seal": 0.6, "friction": 0.2}}
+  ],
+  "links": []
+}

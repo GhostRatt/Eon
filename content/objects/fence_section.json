@@ -1,0 +1,12 @@
+{
+  "name": "fence_section",
+  "category": "Outdoor",
+  "description": "2 m fence: two posts and two rails. Line them up end to end.",
+  "parts": [
+    {"name": "PostA", "type": "static", "pos": [-1, 0.55, 0], "size": [0.08, 1.1, 0.08], "color": [105, 75, 50]},
+    {"name": "PostB", "type": "static", "pos": [1, 0.55, 0], "size": [0.08, 1.1, 0.08], "color": [105, 75, 50]},
+    {"name": "RailTop", "type": "static", "pos": [0, 0.95, 0], "size": [2.0, 0.08, 0.03], "color": [150, 110, 75]},
+    {"name": "RailLow", "type": "static", "pos": [0, 0.45, 0], "size": [2.0, 0.08, 0.03], "color": [150, 110, 75]}
+  ],
+  "links": []
+}

@@ -152,6 +152,7 @@ int Editor::Place(const PaletteItem& item, const Vec3& at) {
     e.color = item.color;
     e.params = item.params;
     e.pos = at;
+    e.rotDeg.y = placeYaw;
     if (item.type == "prefab" || item.type == "plant" || item.type == "terrain" || item.type == "water") e.pos = at;
     else e.pos.y = at.y + 0.5f * item.size.y + (item.type == "door" ? 0.012f : 0.002f);
     if (snapOn) { e.pos.x = std::round(e.pos.x / snap) * snap; e.pos.z = std::round(e.pos.z / snap) * snap; }
@@ -181,32 +182,6 @@ void Editor::DeleteSelection() {
     Commit("Deleted " + std::to_string(gone.size()));
 }
 
-void Editor::Duplicate() {
-    std::map<int, int> remap;
-    std::vector<Entity> add;
-    int next = Z().NextId();
-    for (int id : selection) {
-        const Entity* e = Z().Find(id);
-        if (!e || InstanceOf(e)) continue;
-        Entity c = *e;
-        c.id = next++;
-        c.name += "_copy";
-        c.pos.x += 0.25f;
-        remap[id] = c.id;
-        add.push_back(c);
-    }
-    // wiring among the copied things is copied too
-    std::vector<TerminalLink> links;
-    for (const TerminalLink& l : Z().links)
-        if (remap.count(l.entityA) && remap.count(l.entityB)) links.push_back({remap[l.entityA], l.termA, remap[l.entityB], l.termB});
-    for (const Entity& e : add) Z().entities.push_back(e);
-    for (const TerminalLink& l : links) Z().links.push_back(l);
-    selection.clear();
-    for (auto& [a, b] : remap) selection.insert(b);
-    primary = selection.empty() ? -1 : *selection.begin();
-    Commit("Duplicated " + std::to_string(add.size()));
-}
-
 } // namespace eon
 
 static std::string ContentDir() {
@@ -218,15 +193,26 @@ int main(int argc, char** argv) {
     Editor ed;
     ed.root = ContentDir();
     std::string open = ed.root + "/zones/test_zone_01.json", shot, selectName;
-    bool camSet = false;
+    bool camSet = false, doDraw = false;
     Vector3 camPos{}, camTarget{};
+    Vector4 drawCmd{};
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--shot" && i + 1 < argc) shot = argv[++i];
         else if (a == "--select" && i + 1 < argc) selectName = argv[++i];
         else if (a == "--tool" && i + 1 < argc) {   // for screenshots: start in this tool
             const std::string t = argv[++i];
-            ed.tool = t == "move" ? Tool::Move : t == "wire" ? Tool::Wire : t == "terrain" ? Tool::Terrain : t == "plants" ? Tool::Plants : Tool::Select;
+            const std::pair<const char*, Tool> tools[] = {{"move", Tool::Move}, {"wire", Tool::Wire}, {"terrain", Tool::Terrain}, {"plants", Tool::Plants}, {"draw", Tool::Draw},
+                                                          {"scale", Tool::Scale}, {"rotate", Tool::Rotate}, {"paint", Tool::Paint}, {"measure", Tool::Measure}};
+            for (const auto& [n, tt] : tools) if (t == n) ed.tool = tt;
+        }
+        else if (a == "--draw" && i + 5 < argc) {   // for screenshots/tests: draw SHAPE from x0 z0 to x1 z1 (on the floor) once loaded
+            const std::string sh = argv[i + 1];
+            const char* names[] = {"wall", "floor", "box", "room", "stairs", "water", "ramp"};
+            for (int k = 0; k < 7; ++k) if (sh == names[k]) ed.shape = static_cast<DrawShape>(k);
+            drawCmd = {std::stof(argv[i + 2]), std::stof(argv[i + 3]), std::stof(argv[i + 4]), std::stof(argv[i + 5])};
+            doDraw = true;
+            i += 5;
         }
         else if (a == "--cam" && i + 6 < argc) {
             camPos = {std::stof(argv[i + 1]), std::stof(argv[i + 2]), std::stof(argv[i + 3])};
@@ -257,6 +243,12 @@ int main(int argc, char** argv) {
     LoadPlugins(ed);
     ed.Open(open);
     if (camSet) ed.fly.Init(camPos, camTarget);
+    if (doDraw) {
+        ed.drawA = {drawCmd.x, 0.f, drawCmd.y};
+        ed.drawB = {drawCmd.z, 0.f, drawCmd.w};
+        ed.Log("Drew " + std::to_string(FinishDraw(ed)) + " parts");
+        ed.Commit("Drew");
+    }
     if (!selectName.empty())
         for (const Entity& e : ed.Z().entities) if (e.name == selectName) { ed.selection = {e.id}; ed.primary = e.id; }
 
@@ -328,6 +320,7 @@ int main(int argc, char** argv) {
             ImGui::SetCursorScreenPos({p.x + 8, p.y + 6});
             ImGui::TextColored(ed.playing ? ImVec4(0.4f, 1.f, 0.4f, 1.f) : ImVec4(1, 1, 1, 0.85f), "%s%s  %s", ed.playing ? "PLAY  " : "",
                                ed.Z().name.c_str(), ed.status.c_str());
+            DrawViewportHud(ed);
         }
         ImGui::End();
         ImGui::PopStyleVar();

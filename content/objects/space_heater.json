@@ -1,0 +1,12 @@
+{
+  "name": "space_heater",
+  "category": "Gadgets",
+  "description": "Plug-in heater (500 W): switch on, it warms the air around it.",
+  "parts": [
+    {"name": "Panel", "type": "heater", "pos": [0, 0.35, 0], "size": [0.6, 0.55, 0.1], "color": [230, 225, 215], "params": {"ratedPower": 500, "ratedVoltage": 230}},
+    {"name": "Feet", "type": "static", "pos": [0, 0.03, 0], "size": [0.6, 0.06, 0.25], "color": [80, 80, 85]},
+    {"name": "Mains", "type": "battery", "pos": [0, 0.03, 0], "size": [0.05, 0.04, 0.05], "color": [60, 60, 60], "params": {"voltage": 230, "internalR": 1, "capacityAh": 200}},
+    {"name": "Switch", "type": "switch", "pos": [0.24, 0.55, 0.0575], "size": [0.05, 0.06, 0.015], "color": [60, 60, 60], "params": {"axis": [0, 0, 1]}}
+  ],
+  "links": [["Mains", 0, "Switch", 0], ["Switch", 1, "Panel", 0], ["Panel", 1, "Mains", 1]]
+}

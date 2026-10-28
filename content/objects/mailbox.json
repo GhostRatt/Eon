@@ -1,0 +1,16 @@
+{
+  "name": "mailbox",
+  "category": "Outdoor",
+  "description": "Mailbox on a post with a front flap (hinged door) and a letter inside.",
+  "parts": [
+    {"name": "Post", "type": "static", "pos": [0, 0.55, 0], "size": [0.08, 1.1, 0.08], "color": [105, 75, 50]},
+    {"name": "Floor", "type": "static", "pos": [0, 1.11, -0.02], "size": [0.25, 0.02, 0.38], "color": [60, 80, 120]},
+    {"name": "Roof", "type": "static", "pos": [0, 1.29, -0.02], "size": [0.25, 0.02, 0.38], "color": [60, 80, 120]},
+    {"name": "SideL", "type": "static", "pos": [-0.115, 1.2, -0.02], "size": [0.02, 0.16, 0.38], "color": [60, 80, 120]},
+    {"name": "SideR", "type": "static", "pos": [0.115, 1.2, -0.02], "size": [0.02, 0.16, 0.38], "color": [60, 80, 120]},
+    {"name": "Back", "type": "static", "pos": [0, 1.2, -0.2], "size": [0.21, 0.16, 0.02], "color": [60, 80, 120]},
+    {"name": "Flap", "type": "door", "pos": [0, 1.2, 0.18], "size": [0.22, 0.17, 0.015], "color": [70, 90, 130], "mass": 0.4, "params": {"hingeSide": "left", "frame": "$SideL", "swing": 110, "seal": 0.3, "friction": 0.05}},
+    {"name": "Letter", "type": "dynamic", "pos": [0, 1.125, -0.05], "size": [0.16, 0.01, 0.11], "color": [245, 240, 225], "mass": 0.02}
+  ],
+  "links": []
+}

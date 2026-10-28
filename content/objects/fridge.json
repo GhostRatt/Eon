@@ -1,5 +1,6 @@
 {
   "name": "fridge",
+  "category": "Kitchen & bath",
   "description": "Fridge: hinged door with a magnetic seal, 4 °C inside while it's shut, light on while it's open. An apple and a bottle of water inside.",
   "parts": [
     {"name": "Back", "type": "static", "pos": [0, 0.75, -0.28], "size": [0.6, 1.5, 0.04], "color": [235, 235, 238]},

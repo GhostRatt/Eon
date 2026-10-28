@@ -55,7 +55,9 @@
   "Door panels must clear the floor (bottom >= ~1 cm): floor friction under a 6 kg door looked like a 3x too-strong seal."
  ],
  "World::BuildEntity": [
-  "buttons mounted flush on another static body get stuck (Jolt contact margin): give the button base a ~5 mm standoff from the surface it sits on"
+  "buttons mounted flush on another static body get stuck (Jolt contact margin): give the button base a ~5 mm standoff from the surface it sits on",
+  "Switch plates smaller than ~4 cm across don't flip: the rocker (45% of the plate) is too short for DebugActuate's/her push to beat the detent. Desk-lamp switch 5x1.5x4 cm works, 3x1.2x3 cm doesn't.",
+  "A button whose plate touches or overlaps another static box (e.g. flush button flush on a cistern) won't press under DebugActuate; a 5 mm gap fixes it. Cause not found yet (switches touching are fine)."
  ],
  "World::BuildOutdoor": [
   "terrain must come before water/onGround entities in the zone list (water autoLevel and onGround read GroundHeight while building). Heightfield res is rounded to a multiple of 4 (Jolt block size)."

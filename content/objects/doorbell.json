@@ -1,0 +1,11 @@
+{
+  "name": "doorbell",
+  "category": "Gadgets",
+  "description": "Bell push by a door: while it's held a chime light inside flashes on.",
+  "parts": [
+    {"name": "Push", "type": "button", "pos": [0, 1.3, 0.0], "size": [0.04, 0.04, 0.02], "color": [238, 238, 236], "params": {"axis": [0, 0, 1]}},
+    {"name": "Cell", "type": "battery", "pos": [0, 1.3, -0.05], "size": [0.03, 0.05, 0.03], "color": [60, 60, 60], "params": {"voltage": 9, "internalR": 1, "capacityAh": 0.5}},
+    {"name": "Chime", "type": "lamp", "pos": [0, 2.1, -0.02], "size": [0.08, 0.08, 0.04], "color": [230, 220, 160], "params": {"ratedPower": 2, "ratedVoltage": 9}}
+  ],
+  "links": [["Cell", 0, "Push", 0], ["Push", 1, "Chime", 0], ["Chime", 1, "Cell", 1]]
+}

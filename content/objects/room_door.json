@@ -1,5 +1,6 @@
 {
   "name": "room_door",
+  "category": "Building",
   "description": "Doorway: a door in a frame that swings out toward +z, with a latch and a bolt on the inner (-z) side that locks it.",
   "parts": [
     {"name": "PostL", "type": "static", "pos": [-0.48, 1.03, 0.0], "size": [0.08, 2.06, 0.1], "color": [210, 200, 185]},

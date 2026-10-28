@@ -156,7 +156,7 @@ if(EON_BUILD_APPS)
     target_compile_definitions(imgui PUBLIC NO_FONT_AWESOME)
     target_link_libraries(imgui PUBLIC raylib)
 
-    add_executable(eon_editor apps/editor/main.cpp apps/editor/Panels.cpp apps/editor/Tools.cpp apps/editor/Plugins.cpp)
+    add_executable(eon_editor apps/editor/main.cpp apps/editor/Panels.cpp apps/editor/Tools.cpp apps/editor/Plugins.cpp apps/editor/Actions.cpp)
     target_link_libraries(eon_editor PRIVATE eon_render imgui lua)
 endif()
 

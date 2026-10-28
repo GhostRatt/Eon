@@ -1,0 +1,13 @@
+{
+  "name": "desk_fan",
+  "category": "Gadgets",
+  "description": "Battery fan: a switch on the base runs the motor.",
+  "parts": [
+    {"name": "Base", "type": "static", "pos": [0, 0.03, 0], "size": [0.18, 0.06, 0.14], "color": [230, 230, 235]},
+    {"name": "Cell", "type": "battery", "pos": [0, 0.03, 0], "size": [0.05, 0.04, 0.05], "color": [60, 60, 60], "params": {"voltage": 12, "internalR": 0.2, "capacityAh": 5}},
+    {"name": "Neck", "type": "static", "pos": [0, 0.17, -0.02], "size": [0.03, 0.22, 0.03], "color": [230, 230, 235]},
+    {"name": "Motor", "type": "motor", "pos": [0, 0.3, 0.0], "size": [0.08, 0.08, 0.1], "color": [200, 200, 205], "params": {"resistance": 6, "k": 0.02}},
+    {"name": "Switch", "type": "switch", "pos": [0.05, 0.0675, 0.03], "size": [0.05, 0.015, 0.04], "color": [90, 90, 95], "params": {"axis": [0, 1, 0]}}
+  ],
+  "links": [["Cell", 0, "Switch", 0], ["Switch", 1, "Motor", 0], ["Motor", 1, "Cell", 1]]
+}

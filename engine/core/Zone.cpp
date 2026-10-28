@@ -73,6 +73,11 @@ Entity* Zone::Find(int id) {
     return nullptr;
 }
 
+const Entity* Zone::FindByName(const std::string& n) const {
+    for (const Entity& e : entities) if (e.name == n) return &e;
+    return nullptr;
+}
+
 const Entity* Zone::Find(int id) const {
     for (const Entity& e : entities) if (e.id == id) return &e;
     return nullptr;
@@ -141,7 +146,11 @@ bool ExpandPrefabs(Zone& zone, const std::string& root, std::string* log) {
             e.params = pp.value("params", json::object());
             for (auto it = sets.begin(); it != sets.end(); ++it) {
                 const std::string key = it.key();
-                if (key.rfind(part + ".", 0) == 0) e.params[key.substr(part.size() + 1)] = it.value();
+                if (key.rfind(part + ".", 0) != 0) continue;
+                const std::string sub = key.substr(part.size() + 1);
+                if (sub == "color" && it.value().is_array() && it.value().size() == 3)   // painted in the editor
+                    e.color = {it.value()[0].get<unsigned char>(), it.value()[1].get<unsigned char>(), it.value()[2].get<unsigned char>()};
+                else e.params[sub] = it.value();
             }
             for (auto it = e.params.begin(); it != e.params.end(); ++it) {
                 if (it->is_string()) {
@@ -177,7 +186,7 @@ std::vector<PrefabInfo> ListPrefabs(const std::string& root) {
         std::ifstream f(de.path());
         json pj;
         try { f >> pj; } catch (...) { continue; }
-        out.push_back({de.path().stem().string(), pj.value("description", std::string()), static_cast<int>(pj.value("parts", json::array()).size())});
+        out.push_back({de.path().stem().string(), pj.value("description", std::string()), static_cast<int>(pj.value("parts", json::array()).size()), pj.value("category", std::string("Objects"))});
     }
     std::sort(out.begin(), out.end(), [](const PrefabInfo& a, const PrefabInfo& b) { return a.name < b.name; });
     return out;
@@ -210,7 +219,12 @@ bool SavePrefab(const std::string& root, const std::string& name, const std::str
         params.erase("_from");
         // ids of siblings (valve/drain) become "#Part" so they survive re-numbering
         for (auto it = params.begin(); it != params.end(); ++it)
+        {
             if ((it.key() == "valve" || it.key() == "drain") && it->is_number_integer() && nameOf.count(it->get<int>())) *it = "#" + nameOf[it->get<int>()];
+            // names of siblings (weld, door frame, a script's door...) become "$Part"
+            else if (it->is_string())
+                for (const Entity& o : parts) if (o.name == it->get<std::string>()) { *it = "$" + nameOf[o.id]; break; }
+        }
         if (!params.empty()) jp["params"] = params;
         pj["parts"].push_back(jp);
     }

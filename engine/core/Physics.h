@@ -54,6 +54,7 @@ public:
     // Collision groups: bodies in the same group whose sub groups are marked don't collide.
     uint32_t NewGroup(uint32_t numSubGroups);
     void DisableCollision(uint32_t group, uint32_t subA, uint32_t subB);
+    void SetGroup(BodyHandle b, uint32_t group, uint32_t subGroup);   // after creation
 
     BodyHandle CreateBody(const BodyDesc& d);
     void RemoveBody(BodyHandle h);

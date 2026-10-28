@@ -1,0 +1,9 @@
+{
+  "name": "water_jug",
+  "category": "Food",
+  "description": "2 l jug of water.",
+  "parts": [
+    {"name": "Jug", "type": "container", "pos": [0, 0.13, 0], "size": [0.12, 0.26, 0.12], "color": [200, 225, 240], "mass": 0.2, "params": {"capacity": 2000, "water": 1800}}
+  ],
+  "links": []
+}

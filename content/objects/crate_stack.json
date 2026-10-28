@@ -1,0 +1,11 @@
+{
+  "name": "crate_stack",
+  "category": "Outdoor",
+  "description": "Three stacked crates (4 kg each) that topple.",
+  "parts": [
+    {"name": "Crate1", "type": "dynamic", "pos": [-0.21, 0.15, 0], "size": [0.4, 0.3, 0.3], "color": [150, 110, 70], "mass": 4.0},
+    {"name": "Crate2", "type": "dynamic", "pos": [0.21, 0.15, 0], "size": [0.4, 0.3, 0.3], "color": [150, 110, 70], "mass": 4.0},
+    {"name": "Crate3", "type": "dynamic", "pos": [0.0, 0.45, 0], "size": [0.4, 0.3, 0.3], "color": [160, 120, 80], "mass": 4.0}
+  ],
+  "links": []
+}

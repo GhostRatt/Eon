@@ -1,5 +1,6 @@
 {
   "name": "thermostat_heater",
+  "category": "Gadgets",
   "description": "Battery heater with a thermostat relay that holds the air near it at ~22 °C.",
   "parts": [
     {"name": "Battery", "type": "battery", "pos": [0.3, 0.08, 0], "size": [0.06, 0.15, 0.1], "color": [60, 60, 60], "params": {"voltage": 12.0, "internalR": 0.03, "capacityAh": 40.0}},

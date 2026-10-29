@@ -178,6 +178,7 @@ void UpdateViewport(Editor& ed, float dt) {
         if (IsKeyPressed(KEY_DELETE) && !ed.playing) ed.DeleteSelection();
         if (IsKeyPressed(KEY_ESCAPE)) { ed.tool = Tool::Select; ed.placingActive = false; ed.wireFromEntity = 0; ed.drawing = false; ed.measureStage = 0; }
         if (IsKeyPressed(KEY_END) && !ed.playing) ed.DropToFloor();
+        if (IsKeyPressed(KEY_F5)) ed.PlayWithJenny();
         if (!ctrl && !ed.looking) {
             if (IsKeyPressed(KEY_ONE)) ed.tool = Tool::Select;
             if (IsKeyPressed(KEY_TWO)) ed.tool = Tool::Move;
@@ -237,6 +238,18 @@ void UpdateViewport(Editor& ed, float dt) {
     }
 
     auto pick = [&]() {
+        // Jenny's start has no body: pick it by its marker on screen
+        for (const Entity& e : ed.Z().entities) {
+            if (e.type != "start") continue;
+            const Vector2 a = Screen(ed, e.pos + Vec3{0, 0.1f, 0}), b = Screen(ed, e.pos + Vec3{0, 1.6f, 0});
+            const float camD = Distance(ToEon(ed.fly.cam.position), e.pos);
+            if (SegDist2D(mouse, a, b) < 14.f && (!ed.hasHit || ed.hit.dist > camD - 0.3f)) {
+                if (ctrl) { if (!ed.selection.insert(e.id).second) ed.selection.erase(e.id); }
+                else ed.selection = {e.id};
+                ed.primary = e.id;
+                return;
+            }
+        }
         if (!ed.hasHit) { if (!ctrl) { ed.selection.clear(); ed.primary = -1; } return; }
         const Entity* h = ed.Z().Find(ed.hit.entity);
         Entity* inst = ed.InstanceOf(h);
@@ -540,7 +553,7 @@ void DrawViewportOverlay(Editor& ed) {
     // selection boxes
     for (int id : ed.selection) {
         const Entity* e = ed.Z().Find(id);
-        if (!e) continue;
+        if (!e || e->type == "start") continue;   // drawn as its own marker
         Vec3 axis;
         float ang = 0.f;
         Quat::FromEulerDeg(e->rotDeg).ToAxisAngle(axis, ang);
@@ -595,6 +608,22 @@ void DrawViewportOverlay(Editor& ed) {
         DrawCubeWiresV(ToRl(ed.aim + Vec3{0, 0.5f * s.y, 0}), ToRl(s), SKYBLUE);
     }
     if (ed.playing) return;
+    // Jenny's start: a figure-sized frame with an arrow the way she'll face
+    for (const Entity& e : ed.Z().entities) {
+        if (e.type != "start") continue;
+        const Color c = ed.selection.count(e.id) ? YELLOW : Color{255, 120, 200, 255};
+        float g = e.pos.y;
+        RayHit hit;
+        if (ed.world.RayCast(e.pos + Vec3{0, 0.4f, 0}, {0, -1, 0}, 6.f, hit, true)) g = hit.point.y;
+        const Vec3 f{e.pos.x, g, e.pos.z};
+        DrawCylinderWiresEx(ToRl(f), ToRl(f + Vec3{0, 1.68f, 0}), 0.18f, 0.18f, 10, c);
+        DrawSphereWires(ToRl(f + Vec3{0, 1.55f, 0}), 0.11f, 6, 8, c);
+        const float a = e.rotDeg.y * DEG2RAD;
+        const Vec3 fwd{std::sin(a), 0, std::cos(a)};   // her forward is local +z
+        DrawCylinderEx(ToRl(f + Vec3{0, 0.02f, 0}), ToRl(f + Vec3{0, 0.02f, 0} + fwd * 0.45f), 0.02f, 0.02f, 6, c);
+        DrawCylinderEx(ToRl(f + Vec3{0, 0.02f, 0} + fwd * 0.45f), ToRl(f + Vec3{0, 0.02f, 0} + fwd * 0.6f), 0.06f, 0.f, 8, c);
+        if (std::fabs(g - e.pos.y) > 0.02f) DrawLine3D(ToRl(e.pos), ToRl(f), c);
+    }
     // draw tool: the shape being dragged
     if (ed.tool == Tool::Draw && ed.drawing) {
         const Vec3 a = ed.drawA, b = ed.drawB;

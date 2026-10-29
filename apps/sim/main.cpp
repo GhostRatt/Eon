@@ -27,11 +27,13 @@
 #include "character/Posture.h"
 #include "character/Dressing.h"
 #include "character/Wardrobe.h"
+#include "core/Level.h"
 #include "core/World.h"
 #include "render/CharacterRenderer.h"
 #include "render/ZoneRenderer.h"
 
 using namespace eon;
+namespace fs = std::filesystem;
 
 namespace {
 
@@ -423,6 +425,10 @@ int main(int argc, char** argv) {
         else if (arg == "--actuate" && a + 1 < argc) actuateArgs.push_back(argv[++a]);
         else if (arg == "--bite" && a + 1 < argc) biteArgs.push_back(argv[++a]);   // operator: take 3 bites out of a food (see the marks)
         else if (arg == "--cam" && a + 6 < argc) { for (float& c : cam) c = std::stof(argv[++a]); customCam = true; }
+        else if (arg == "--level" && a + 1 < argc) {   // a level exported from the editor: content/levels/NAME.json (or a path)
+            const std::string n = argv[++a];
+            zonePath = fs::exists(n) ? n : content + "/levels/" + n + ".json";
+        }
         else zonePath = arg;
     }
 
@@ -446,6 +452,11 @@ int main(int argc, char** argv) {
         for (const Entity& e : world.GetZone().entities)
             if (e.type == "switch") world.DebugActuate(e.id, false);
     }
+    // a level says where Jenny starts and how her stay is set up (command-line options still win)
+    LevelStart start = FindStart(world.GetZone());
+    if (memoryArg.empty() && start.found && !start.memory.empty()) memoryArg = "memory/" + start.memory;
+    if (start.found && timeScale == 1.f) timeScale = start.timeScale;
+    if (start.found && wearArg.empty() && !stripArg) { wearArg = start.wear; stripArg = start.strip || !start.wear.empty(); }
     auto body = std::make_unique<Body>();
     body->memoryDir = memoryArg;
     body->showMind = showMindArg;
@@ -463,11 +474,26 @@ int main(int argc, char** argv) {
         pos = comma == std::string::npos ? comma : comma + 1;
     }
     auto ambient = [&]() { return tempOverride > -999.f ? tempOverride : world.GetZone().ambientC; };
+    // put her at the level's start (after any reload too)
+    auto placeAtStart = [&]() {
+        if (!body->loaded) return;
+        start = FindStart(world.GetZone());
+        if (!start.found) return;
+        const Vec3 feet = StandingSpot(world, start);
+        body->motor.Teleport(body->ch, feet, start.yawDeg * DEG2RAD);
+    };
+    auto enterZone = [&](const std::string& path) {
+        LoadOrWarn(world, path, status);
+        placeAtStart();
+    };
     if (spawnArg && body->loaded) {
         float gy = 0.f;
         world.GroundHeight(spawn[0], spawn[1], gy);   // outdoors: stand on the terrain
         body->motor.Teleport(body->ch, {spawn[0], gy, spawn[1]}, spawn[2] * DEG2RAD);
-    }
+    } else placeAtStart();
+    std::vector<LevelInfo> levels = ListLevels(content);
+    int levelAt = -1;
+    for (size_t i = 0; i < levels.size(); ++i) if (fs::path(levels[i].file) == fs::path(zonePath)) levelAt = static_cast<int>(i);
     if (reachArg) {
         auto& h = body->intent.hands[1];
         h.reach = true;
@@ -519,9 +545,18 @@ int main(int argc, char** argv) {
         const bool grabbing = world.GrabbedBody() >= 0;
         fly.Update(dt, !grabbing);
 
-        if (IsKeyPressed(KEY_ONE)) LoadOrWarn(world, waiting, status);
-        if (IsKeyPressed(KEY_TWO)) LoadOrWarn(world, test01, status);
-        if (IsKeyPressed(KEY_R)) { world.Reset(); status = "Reset " + world.GetZone().name; }
+        if (IsKeyPressed(KEY_ONE)) enterZone(waiting);
+        if (IsKeyPressed(KEY_TWO)) enterZone(test01);
+        if (IsKeyPressed(KEY_PAGE_DOWN) || IsKeyPressed(KEY_PAGE_UP)) {   // next / previous exported level
+            levels = ListLevels(content);
+            if (!levels.empty()) {
+                const int n = static_cast<int>(levels.size());
+                levelAt = ((levelAt < 0 ? (IsKeyPressed(KEY_PAGE_DOWN) ? -1 : 0) : levelAt) + (IsKeyPressed(KEY_PAGE_DOWN) ? 1 : n - 1)) % n;
+                enterZone(levels[levelAt].file);
+                status = "Level " + levels[levelAt].title + (levels[levelAt].description.empty() ? "" : ": " + levels[levelAt].description);
+            } else status = "No levels yet (editor: File > Export level)";
+        }
+        if (IsKeyPressed(KEY_R)) { world.Reset(); placeAtStart(); status = "Reset " + world.GetZone().name; }
         if (IsKeyPressed(KEY_H)) showHud = !showHud;
         if (IsKeyPressed(KEY_M)) body->posture.motion = static_cast<TestMotion>((static_cast<int>(body->posture.motion) + 1) % 7);
         for (int k = 0; k < 6; ++k) if (IsKeyPressed(KEY_THREE + k)) body->ToggleGarment(k);   // 3..8: garments
@@ -647,7 +682,7 @@ int main(int argc, char** argv) {
             }
             DrawText("OPERATOR VIEW (Jenny never sees this)", 16, 14, 18, ORANGE);
             DrawText(TextFormat("%s   t = %.1fs   %d fps", world.GetZone().name.c_str(), world.SimTime(), GetFPS()), 16, 38, 18, RAYWHITE);
-            DrawText("1 Waiting Area  2 Test Zone 01  R reset  H hud", 16, 62, 16, LIGHTGRAY);
+            DrawText("1 Waiting Area  2 Test Zone 01  PgUp/PgDn levels  R reset  H hud", 16, 62, 16, LIGHTGRAY);
             DrawText("RMB look WASD/QE fly LMB grab F push | Jenny: MMB/arrows move Z stance Space climb J/U reach G grip V lift X drop O talk N mind I mouth B bite L pee", 16, 82, 16, LIGHTGRAY);
             DrawText(status.c_str(), 16, 106, 16, SKYBLUE);
 

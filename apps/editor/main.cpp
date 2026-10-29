@@ -153,6 +153,16 @@ int Editor::Place(const PaletteItem& item, const Vec3& at) {
     e.params = item.params;
     e.pos = at;
     e.rotDeg.y = placeYaw;
+    if (item.type == "start")   // there's one start: placing it again moves it
+        for (Entity& x : Z().entities)
+            if (x.type == "start") {
+                x.pos = at;
+                x.rotDeg.y = placeYaw;
+                selection = {x.id};
+                primary = x.id;
+                Commit("Moved Jenny's start");
+                return x.id;
+            }
     if (item.type == "prefab" || item.type == "plant" || item.type == "terrain" || item.type == "water") e.pos = at;
     else e.pos.y = at.y + 0.5f * item.size.y + (item.type == "door" ? 0.012f : 0.002f);
     if (snapOn) { e.pos.x = std::round(e.pos.x / snap) * snap; e.pos.z = std::round(e.pos.z / snap) * snap; }

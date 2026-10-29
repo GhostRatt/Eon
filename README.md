@@ -46,7 +46,54 @@ Put the Primrose files in `content/characters/jenny/source/` (git-ignored, they 
   - **Wire tool**: drag from a green terminal to another. Toolbar: *in the wall* (a hidden connection) or *loose wire* (a real wire with clips she can pull off). Right-click a connection to cut it. The **Schematic** panel shows the circuit as a floor plan with live current.
   - **World panel**: map name, air temperature, sun, day length, plant speed; terrain (generate from seed/hills/size, regenerate, sculpt with raise/lower/smooth/flatten/noise brushes, dig a pond); plants (species, brush, counts).
   - **Plugins** (Lua, `content/plugins/*/plugin.lua`, reload on save): add parts, inspector settings and tools. See `content/plugins/README.md`.
-  - PLAY tests it: physics, circuits and scripts run; LMB grabs, F pushes, Space presses/flips the selection; stopping restores the layout.
+  - **Jenny in your map**: put a *Jenny start* down (Content > Build; the arrow is the way she faces; new maps have one). Its settings: clothes she starts in, a memory name (she remembers this place between runs), game speed. **F5 / Play with Jenny** saves the map and opens it in the sim with her standing there.
+  - **File > Export level**: checks the map (no start, start in a wall or over nothing, missing objects, script errors, dark rooms...), then writes `content/levels/NAME.json` (optionally with objects baked into plain parts). In the sim, PgUp/PgDn go through your levels, or `"Run Sim.bat" --level NAME`.
+  - Test physics (P) tests it: physics, circuits and scripts run; LMB grabs, F pushes, Space presses/flips the selection; stopping restores the layout.
+
+### Outdoors
+- `content/zones/outdoors_01.json`: generated rolling ground with a pond in a hollow (sun-lit, sky). Terrain = `"type": "terrain"` with a seed and hill size, or sculpted heights saved in the zone; water = a box whose top is the surface (`autoLevel` fills the hollow). Wood floats, stones sink, buckets fill when held under, she gets wet and cold in it and can drink from it.
+
+### Making objects
+- An object is `content/objects/NAME.json`: its parts (any entity types with params and scripts) and the wires between them. Place it in a zone as `{"type": "prefab", "params": {"prefab": "NAME", "set": {"Button.stock": 3}}}`; it rotates with the instance's yaw. Examples: `vending_machine`, `fridge` (seal-latched door, 4 °C inside while shut, light while open), `room_door` (frame, latch, bolt switch), `thermostat_heater`, `timer_light`, `motion_lamp`. Scripts can place whole objects at runtime with `world.spawn_object(name, x, y, z, yaw, {["Part.key"] = v})`.
+- What an object does is a Lua 5.4 script on a part (`params.script = "scripts/x.lua"`): `on_start`, `on_tick(self, dt)`, `on_press`/`on_release`, timers `after`/`every`, and calls like `self:set_relay(true)`, `self:set_glow(1)`, `world.air_temp(x,y,z)`, `world.agent_near(x,y,z,r)`, `world.spawn("food", x,y,z, {...})`. Scripts are sandboxed and a broken one only stops itself. Jenny never sees any of this; she only feels and sees the physical result.
+
+## Status
+| Module | Status |
+|---|---|
+| `engine/core` Circuit | done — nodal solver: batteries (drain, sag, internal resistance), wires, switches, buttons, lamps, motors |
+| `engine/core` Zone/World | done — JSON zones, fixed 120 Hz sim |
+| `engine/render` | done — lamp-lit renderer, picking, fly camera |
+| `engine/core` Physics/World | done — Jolt 5.6: real mass/friction, spring buttons, bistable rocker switches, rope wires with clips that latch on release and pull off past 12 N, touching terminals conduct, kinematic grab hand with grip slip |
+| `apps/sim`, `apps/editor` | operator hand (grab/carry, push); editor edit/play modes, terminal markers |
+| Editor tools | step 3 |
+| `engine/character` | done (verified on a stand-in rig) — FBX import via ufbx (skin weights, morphs, materials, any unit/axis → meters Y-up), auto rig mapping (Mannequin/ARP/Mixamo/Blender names), auto-facing, two-bone IK, skin-fitted body capsules, limb collision, breast/glute spring-mass soft tissue with support, multithreaded CPU skinning |
+| `engine/render/CharacterRenderer` | done — textured (TGA/PNG/JPG), lamp-lit skin shading, 16-bit chunking for big meshes |
+| Jenny (Primrose) | loaded from `E:\Eon-main\Assets for Claude` via `character.json`: textures, hair opacity, 77 morphs |
+| `engine/character/Face` | blinking (random, tired = slow/heavy lids), eye saccades, mood/cold/heat expressions on ARKit morphs |
+| `engine/character/Dangles` | hair + earring bone chains (33 chains / 129 bones): gravity, swing, styled shape, head/torso collision |
+| `engine/character/BodyState` | needs, core temp, sweat → skin sheen, shiver tremor, breathing rate/depth, heart rate, mood, body-sense text |
+| `engine/character/Motor` | her motor primitives (walk direction, face, look, per-hand reach/grip/effort): real torso + hand bodies in Jolt, walls stop her, light things get shoved, hands are muscle-driven (60 N max) so they get blocked by surfaces and physically push buttons, grips slip past 120 N, bends at the hips to reach across a table, planted-foot gait with hip bob and arm swing |
+| Stances | stand, crouch (duck-walk), kneel, sit on the floor, sit on a seat (chair/bed edge/box — only if something is behind her), hands-and-knees crawl, prone (army crawl), lie on back / left side / right side (bed or floor); she moves through the in-between positions, and rolls over back ↔ side ↔ front keeping her head in place |
+| Hands | 15 finger joints per hand found by name; fingers curl loosely when relaxed, open and spread when reaching, close around what she holds (fist on nothing), lie flat and spread when planted; palms turn toward what she reaches for, flat on the floor when planted; torso pitches until planted hands actually reach the floor |
+| Matter (`World_Matter.cpp`) | taps opened by real valves (lever/switch/button), falling water streams (gravity, spray heads), containers that fill/overflow/pour when tilted, toilet bowl + flush lever, puddles that spread and evaporate, food that is bitten down to nothing, resistive heaters in the circuit that warm the air around them (and glow, and drain their battery) |
+| Body intake (`BodyMatter`) | mouth open/bite as motor primitives (drinks what reaches the open mouth, bites food held to it, chews), peeing as a real stream from her body (toilet, floor, legs, underwear), drunk water reaches the bladder over ~45 game min, wet skin dries and cools her, local air temperature drives her thermal model; her mind learns "drink → less thirsty" itself |
+| Using things | fingertip pointing (a small physical fingertip presses rockers/small buttons), whole-hand presses, gripping and throwing a wall lever along its arc, one- or two-handed carrying with targets that move with her body, shared weight between hands, wrists hold carried things steady, loads slow her down, hands draw back after letting go |
+| Getting into bed | sit on the edge → lie down along it on her side (hips shuffle onto it, legs swing up) → roll → sit up over the edge she faces → stand on the floor |
+| Floor contact | feet keep their orientation under hip lean (flat in a crouch); foot skin samples are pushed above the floor when kneeling/lying (tops of the feet flat); hair lies on the floor/bed instead of going through; breasts and glutes flatten and spread against the floor/bed they're pressed into |
+| Feet & ground | barefoot `FlatFeets` + floor refit so soles sit flat; per-foot ground contact and normals; steps up/down to 38 cm; stops at drops |
+| Climbing | Space with a direction: hands on the edge, knee up, stand on top (30–135 cm); climbs down off ledges too |
+| `engine/character/LipSync` | text → visemes (or TTS phoneme timings, or live amplitude) on ARKit mouth morphs with coarticulation |
+| Sleep | lying still while tired → drowsy → asleep (eyes shut, slow breathing, recovers fatigue); wakes rested or when cold/hot/needing the toilet |
+| `engine/character/Wardrobe` | garments on her skeleton, layer rules (outer off first), bra/panty support for soft tissue, fit morphs, clo, streamer mode keeps underwear on |
+| `engine/mind` (memory graph) | sensor firewall (`Perception`: eyes from her head with occlusion + peripheral vision, hands, body feelings; opaque tracks only), `Learner` (her own names for things, on/near, weight, movable, glow; cause→effect from timing with observed/inferred/ambiguous provenance and evidence counts), `MemoryGraph` (traversal-based context within a token budget, questions → curiosity, communities, sleep consolidation, journaled persistence, HTML viewer). See Docs/Mind_Memory.md |
+| Mind bridge (LLM brain), OBS | next |
+
+## Code graph (for working on Eon with an AI assistant)
+`tools/codegraph/eongraph.py` maps the repo into a graph of symbols, calls and includes, built locally with tree-sitter (`pip install tree-sitter tree-sitter-cpp tree-sitter-python`; it falls back to regex without it).
+`context "<task>"`, `show <sym>`, `impact <sym>` and similar commands return only the code that matters, 10–100× fewer tokens than opening files.
+Notes on symbols live in `tools/codegraph/notes.json`. Assistant instructions are in `CLAUDE.md`.
+
+: physics, circuits and scripts run; LMB grabs, F pushes, Space presses/flips the selection; stopping restores the layout.
 
 ### Outdoors
 - `content/zones/outdoors_01.json`: generated rolling ground with a pond in a hollow (sun-lit, sky). Terrain = `"type": "terrain"` with a seed and hill size, or sculpted heights saved in the zone; water = a box whose top is the surface (`autoLevel` fills the hollow). Wood floats, stones sink, buckets fill when held under, she gets wet and cold in it and can drink from it.

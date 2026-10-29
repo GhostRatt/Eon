@@ -88,8 +88,12 @@ void BuildSchemas(Editor& ed) {
     S["water"] = {Num("tempC", 16, -2, 60, 0.5f, "Water temperature."), Bool("autoLevel", false, "Fill the hollow it sits in (surface just below the rim)."),
                   Num("freeboard", 0.12f, 0, 2, 0.01f, "With autoLevel: how far below the rim.")};
     S["prefab"] = {Text("prefab", "", "Object file in content/objects.")};
+    S["start"] = {Text("wear", "", "Clothes she starts in, comma list (Panties,Bra,...). Empty: her usual outfit."),
+                  Bool("strip", false, "Starts with nothing on."),
+                  Text("memory", "", "Keeps what she learns here between runs (folder memory/<this>). Empty: she starts fresh each time."),
+                  Num("timeScale", 1, 0.1f, 120, 0.1f, "Game minutes per real second (her body clock: hunger, tiredness, plants).")};
     for (auto& [type, defs] : S) {   // anything with a body can be welded to another part (one rigid object)
-        if (type == "terrain" || type == "water" || type == "plant" || type == "seed" || type == "prefab" || type == "wire") continue;
+        if (type == "terrain" || type == "water" || type == "plant" || type == "seed" || type == "prefab" || type == "wire" || type == "start") continue;
         defs.push_back(Name("weld", "Fixed to this part (name): together they move as one piece, like a chair's legs and seat."));
         defs.push_back(Num("weldBreakN", 0, 0, 5000, 1, "Pulls apart above this force, N (0 = never)."));
     }
@@ -112,6 +116,7 @@ void BuildPalette(Editor& ed) {
     add("Build", "Crate", "dynamic", {0.4f, 0.3f, 0.3f}, 4.f, {150, 110, 70}, json::object(), "A loose box she can push or carry (4 kg).");
     add("Build", "Small box", "dynamic", {0.2f, 0.12f, 0.15f}, 0.5f, {200, 190, 170}, json::object(), "Light loose box.");
     add("Build", "Door", "door", {0.8f, 1.95f, 0.04f}, 15.f, {150, 110, 80}, {{"hingeSide", "left"}, {"swing", 100}, {"seal", 2}}, "Hinged door with a latch.");
+    add("Build", "Jenny start", "start", {0.4f, 1.7f, 0.4f}, 0, {255, 120, 200}, json::object(), "Where Jenny stands when the map is played (arrow = the way she faces). One per map.");
     add("Build", "Marker", "static", {0.05f, 0.05f, 0.05f}, 0, {255, 0, 255}, {{"ghost", true}}, "Invisible point scripts can refer to.");
     add("Electric", "Battery 9V", "battery", {0.026f, 0.048f, 0.017f}, 0.045f, {60, 60, 60}, {{"voltage", 9}, {"internalR", 1.5}, {"capacityAh", 0.5}}, "Loose 9 V battery.");
     add("Electric", "Battery 12V", "battery", {0.06f, 0.15f, 0.1f}, 0, {60, 60, 60}, {{"voltage", 12}, {"internalR", 0.05}, {"capacityAh", 7}}, "Fixed 12 V battery.");
@@ -151,6 +156,7 @@ void DrawMenuBar(Editor& ed) {
         if (ImGui::MenuItem("Open...", "Ctrl+O")) { ed.RefreshContent(); ed.showOpen = true; }
         if (ImGui::MenuItem("Save", "Ctrl+S")) ed.Save(ed.path);
         if (ImGui::MenuItem("Save as...")) ed.showSaveAs = true;
+        if (ImGui::MenuItem("Export level for the sim...")) { ed.issues = ed.RunChecks(); ed.showExport = true; }
         if (ImGui::MenuItem("Reload from disk")) ed.Open(ed.path);
         ImGui::Separator();
         if (ImGui::MenuItem("Quit")) CloseWindow();
@@ -201,6 +207,9 @@ void DrawMenuBar(Editor& ed) {
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Play")) {
+        if (ImGui::MenuItem("Play with Jenny (in the sim)", "F5")) ed.PlayWithJenny();
+        if (ImGui::MenuItem("Check the level...")) { ed.issues = ed.RunChecks(); ed.showExport = true; }
+        ImGui::Separator();
         if (ImGui::MenuItem(ed.playing ? "Stop" : "Play", "P")) {
             ed.playing = !ed.playing;
             ed.world.EndGrab();
@@ -263,7 +272,10 @@ void DrawToolbar(Editor& ed) {
     toolBtn("Measure 0", Tool::Measure, "Click two points to see the distance.");
     ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
     ImGui::SameLine();
-    if (ImGui::Button(ed.playing ? "Stop (P)" : "Play (P)")) {
+    if (ImGui::Button("Play with Jenny (F5)")) ed.PlayWithJenny();
+    if (ImGui::BeginItemTooltip()) { ImGui::TextUnformatted("Saves the map and opens it in the sim with Jenny at her start."); ImGui::EndTooltip(); }
+    ImGui::SameLine();
+    if (ImGui::Button(ed.playing ? "Stop (P)" : "Test physics (P)")) {
         ed.playing = !ed.playing;
         ed.world.EndGrab();
         ed.Rebuild();
@@ -1027,6 +1039,62 @@ void DrawDialogs(Editor& ed) {
             if (ImGui::SmallButton("ring of 8")) { ed.arrayCount = 8; ed.arrayOffset = {0, 0, 0}; ed.arrayYaw = 45; }
             if (ImGui::BeginItemTooltip()) { ImGui::TextUnformatted("Turns each copy about the selection's centre: select something away from the middle (or two things) to make a ring."); ImGui::EndTooltip(); }
             if (ImGui::Button("Make copies", {140, 0}) && !ed.selection.empty()) { ed.ArraySelection(ed.arrayCount, ed.arrayOffset, ed.arrayYaw); ed.showArray = false; }
+        }
+        ImGui::End();
+    }
+    if (ed.showExport) {
+        ImGui::SetNextWindowSize({520, 0}, ImGuiCond_Appearing);
+        if (ImGui::Begin("Export level", &ed.showExport, ImGuiWindowFlags_NoDocking)) {
+            ExportOptions& o = ed.exportOpts;
+            if (o.name.empty()) o.name = fs::path(ed.path).stem().string();
+            ImGui::TextWrapped("Makes this map a level for the sim (content/levels). In the sim: PgUp/PgDn go through the levels, "
+                               "or start one directly with  eon_sim --level %s", o.name.c_str());
+            ImGui::InputText("level name", &o.name);
+            ImGui::InputText("title", &o.title);
+            ImGui::InputTextMultiline("about", &o.description, {-1, 50});
+            ImGui::Checkbox("bake objects into plain parts", &o.bakeObjects);
+            if (ImGui::BeginItemTooltip()) { ImGui::TextUnformatted("The level keeps working even if an object file is changed or deleted later."); ImGui::EndTooltip(); }
+            const LevelStart st = FindStart(ed.Z());
+            if (st.found) ImGui::Text("Jenny starts at %.2f, %.2f, %.2f facing %.0f°%s%s", st.pos.x, st.pos.y, st.pos.z, st.yawDeg,
+                                      st.memory.empty() ? "" : ", remembers in memory/", st.memory.c_str());
+            ImGui::SeparatorText("checks");
+            int errors = 0;
+            for (const LevelIssue& i : ed.issues) {
+                const ImVec4 col = i.severity == 2 ? ImVec4(1, 0.4f, 0.35f, 1) : i.severity == 1 ? ImVec4(1, 0.8f, 0.3f, 1) : ImVec4(0.7f, 0.75f, 0.8f, 1);
+                ImGui::TextColored(col, "%s", i.severity == 2 ? "error" : i.severity == 1 ? "warning" : "note");
+                ImGui::SameLine(70);
+                ImGui::TextWrapped("%s", i.text.c_str());
+                errors += i.severity == 2;
+            }
+            if (ed.issues.empty()) ImGui::TextColored({0.5f, 1, 0.5f, 1}, "All good.");
+            if (ImGui::SmallButton("check again")) ed.issues = ed.RunChecks();
+            ImGui::Separator();
+            auto doExport = [&](bool play) {
+                if (ed.dirty) ed.Save(ed.path);
+                std::string out, err;
+                if (ExportLevel(ed.root, ed.Z(), o, &out, &err)) {
+                    ed.Log("Exported level " + o.name + " -> " + out);
+                    if (play) ed.LaunchSim(out);
+                    ed.showExport = false;
+                } else ed.Log("Export failed: " + err);
+            };
+            if (errors) ImGui::TextColored({1, 0.4f, 0.35f, 1}, "%d error(s): it will export, but Jenny may not be able to play it.", errors);
+            if (ImGui::Button("Export", {130, 0})) doExport(false);
+            ImGui::SameLine();
+            if (ImGui::Button("Export and play", {150, 0})) doExport(true);
+            const auto levels = ListLevels(ed.root);
+            if (!levels.empty() && ImGui::TreeNode("levels", "Exported levels (%d)", (int)levels.size())) {
+                for (const LevelInfo& l : levels) {
+                    ImGui::PushID(l.name.c_str());
+                    if (ImGui::SmallButton("play")) ed.LaunchSim(l.file);
+                    ImGui::SameLine();
+                    ImGui::Text("%s", l.title.c_str());
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("%s%s", l.name.c_str(), l.hasStart ? "" : "  (no start)");
+                    ImGui::PopID();
+                }
+                ImGui::TreePop();
+            }
         }
         ImGui::End();
     }

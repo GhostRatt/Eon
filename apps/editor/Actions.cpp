@@ -1,6 +1,8 @@
 // Editor actions on the selection: drop to floor, align, distribute, array, copy/paste, frame.
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
 
 #include "raylib.h"
 #include "raymath.h"
@@ -166,6 +168,36 @@ void Editor::Paste(const Vec3& at) {
     selection = std::set<int>(ids.begin(), ids.end());
     primary = ids.empty() ? -1 : ids.front();
     Commit("Pasted " + std::to_string(ids.size()));
+}
+
+std::vector<LevelIssue> Editor::RunChecks() {
+    World w;
+    w.SetContentRoot(root);
+    w.SetZone(Z());
+    return CheckLevel(w, root);
+}
+
+void Editor::LaunchSim(const std::string& file) {
+    namespace fs = std::filesystem;
+#ifdef _WIN32
+    const std::string exe = std::string(GetApplicationDirectory()) + "eon_sim.exe";
+#else
+    const std::string exe = std::string(GetApplicationDirectory()) + "eon_sim";
+#endif
+    if (!fs::exists(exe)) { Log("Can't find " + exe + " (build eon_sim)"); return; }
+    const std::string arg = "--level \"" + fs::absolute(file).string() + "\"";
+#ifdef _WIN32
+    const std::string cmd = "start \"\" \"" + exe + "\" " + arg;
+#else
+    const std::string cmd = "\"" + exe + "\" " + arg + " &";
+#endif
+    Log(std::system(cmd.c_str()) == 0 ? "Started the sim: " + fs::path(file).filename().string() : "Couldn't start the sim");
+}
+
+void Editor::PlayWithJenny() {
+    if (dirty || path.empty()) Save(path);
+    if (!FindStart(Z()).found) Log("No Jenny start in this map: she'll appear in the middle (Content > Build > Jenny start)");
+    LaunchSim(path);
 }
 
 void Editor::FrameSelection() {

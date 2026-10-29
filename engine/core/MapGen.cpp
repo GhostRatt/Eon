@@ -22,6 +22,7 @@ Zone MakeMap(const NewMapSpec& s) {
     int id = 1;
     if (s.kind == "empty") {
         z.entities.push_back(Box(id++, "Floor", "static", {0, -0.05f, 0}, {s.sizeX, 0.1f, s.sizeZ}, {150, 150, 155}));
+        z.entities.push_back(Box(id++, "JennyStart", "start", {0, 0, 0}, {0.4f, 1.7f, 0.4f}, {255, 120, 200}));
         return z;
     }
     if (s.kind == "room") {
@@ -39,6 +40,9 @@ Zone MakeMap(const NewMapSpec& s) {
                                  {{"voltage", 12.0}, {"internalR", 0.05}, {"capacityAh", 40.0}, {"hidden", true}}));
         z.entities.push_back(Box(sw, "LightSwitch", "switch", {w / 2 - 0.01f, 1.15f, d / 2 - 0.6f}, {0.02f, 0.12f, 0.08f}, {245, 245, 245}, 0.f,
                                  {{"axis", nlohmann::json::array({-1, 0, 0})}}));
+        Entity st = Box(lamp + 1, "JennyStart", "start", {-w * 0.25f, 0, 0}, {0.4f, 1.7f, 0.4f}, {255, 120, 200});
+        st.rotDeg.y = 90.f;   // facing the light switch wall (+x)
+        z.entities.push_back(st);
         z.entities.push_back(Box(lamp, "CeilingLamp", "lamp", {0, h - 0.08f, 0}, {0.12f, 0.1f, 0.12f}, {255, 240, 210}, 0.f, {{"ratedPower", 12.0}, {"ratedVoltage", 12.0}}));
         z.links = {{bat, 0, sw, 0}, {sw, 1, lamp, 0}, {lamp, 1, bat, 1}};
         return z;
@@ -55,6 +59,20 @@ Zone MakeMap(const NewMapSpec& s) {
     z.entities.push_back(Box(id++, "Ground", "terrain", {0, 0, 0}, {s.sizeX, 4.f, s.sizeZ}, {86, 128, 58}, 0.f, tp));
     if (s.pond)
         z.entities.push_back(Box(id++, "Pond", "water", {pond.x, 0, pond.z}, {pondR * 1.7f, 4.f, pondR * 1.7f}, {70, 110, 140}, 0.f, {{"autoLevel", true}, {"tempC", 15.0}}));
+    {
+        // Jenny starts in the middle, or beside the pond if it's there, facing the water
+        Vec3 at{0, 0, 0};
+        if (s.pond && std::hypot(pond.x, pond.z) < pondR + 1.5f) {
+            const float l = std::hypot(pond.x, pond.z);
+            const Vec3 dir = l > 0.1f ? Vec3{-pond.x / l, 0, -pond.z / l} : Vec3{1, 0, 0};
+            at = pond + dir * (pondR + 2.f);
+            at.x = std::clamp(at.x, -0.45f * s.sizeX, 0.45f * s.sizeX);   // small maps: stay on the ground
+            at.z = std::clamp(at.z, -0.45f * s.sizeZ, 0.45f * s.sizeZ);
+        }
+        Entity st = Box(id++, "JennyStart", "start", at, {0.4f, 1.7f, 0.4f}, {255, 120, 200});
+        st.rotDeg.y = std::atan2(pond.x - at.x, pond.z - at.z) * 57.29578f;
+        z.entities.push_back(st);
+    }
     if (s.plants) {
         id = std::max(id, 100);
         auto away = [&](float x, float zz, float gap) { return !s.pond || std::hypot(x - pond.x, zz - pond.z) > pondR + gap; };

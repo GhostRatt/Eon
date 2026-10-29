@@ -1,4 +1,5 @@
 #include <filesystem>
+namespace fs = std::filesystem;
 #include <chrono>
 #include <algorithm>
 #include <cmath>
@@ -17,6 +18,7 @@
 #include "character/Posture.h"
 #include "character/Wardrobe.h"
 #include "core/Circuit.h"
+#include "core/Level.h"
 #include "core/MapGen.h"
 #include "core/Terrain.h"
 #include "core/World.h"
@@ -1808,7 +1810,24 @@ static void TestNewMaps(const std::string& contentDir) {
     Zone back;
     CHECK(ZoneFromJson(ZoneToJson(z), back) && back.entities.size() == z.entities.size() && back.sun == z.sun);
     s.kind = "empty";
-    CHECK(MakeMap(s).entities.size() == 1);
+    CHECK(MakeMap(s).entities.size() == 2 && FindStart(MakeMap(s)).found);   // floor + Jenny's start
+    s.kind = "outdoor";
+    s.sizeX = s.sizeZ = 40.f;
+    for (int seed : {1, 2, 3, 42}) {                                     // every new outdoor map can be played as it is
+        s.seed = seed;
+        World wo;
+        wo.SetContentRoot(contentDir);
+        wo.SetZone(MakeMap(s));
+        int worst = -1;
+        for (const LevelIssue& i : CheckLevel(wo, contentDir)) { worst = std::max(worst, i.severity); if (i.severity) std::printf("    seed %d: %s\n", seed, i.text.c_str()); }
+        CHECK(worst < 1);
+    }
+    s.kind = "room";
+    World wr2;
+    wr2.SetZone(MakeMap(s));
+    int worstRoom = -1;
+    for (const LevelIssue& i : CheckLevel(wr2, contentDir)) { worstRoom = std::max(worstRoom, i.severity); if (i.severity) std::printf("    room: %s\n", i.text.c_str()); }
+    CHECK(worstRoom < 1);
 }
 
 // Every stock object loads, settles on the floor without flying apart, and the welded / wired ones work.
@@ -1925,6 +1944,87 @@ static void TestStockObjects(const std::string& contentDir) {
         w.DebugActuate(handle, true);
         w.Advance(4.0);
         CHECK(w.ContainerMl(basin) > 150.f);
+    }
+}
+
+// A map exported as a level: Jenny's start, the checks before playing, baking objects, and her standing where it says.
+static void TestLevels(const std::string& contentDir) {
+    Zone z = FloorZone(0.f, 0.f);
+    z.entities.push_back(Ent(5, "Stage", "static", {2.f, 0.25f, 0.f}, {1.2f, 0.5f, 1.2f}));
+    Entity st = Ent(6, "JennyStart", "start", {2.f, 1.2f, 0.f}, {0.4f, 1.7f, 0.4f}, 0.f, {{"wear", "Panties"}, {"memory", "stage_test"}, {"timeScale", 2.0}});
+    st.rotDeg.y = 90.f;
+    z.entities.push_back(st);
+    Entity chair; chair.id = 9; chair.name = "Chair"; chair.type = "prefab"; chair.pos = {-1.f, 0.f, 0.f}; chair.params = {{"prefab", "chair"}};
+    z.entities.push_back(chair);
+
+    const LevelStart s = FindStart(z);
+    CHECK(s.found && s.entity == 6 && std::fabs(s.yawDeg - 90.f) < 0.01f && s.wear == "Panties" && s.memory == "stage_test" && std::fabs(s.timeScale - 2.f) < 1e-4f);
+    World w;
+    w.SetContentRoot(contentDir);
+    w.SetZone(z);
+    CHECK(w.MainBodyOf(6) < 0);                                  // the start is nothing physical
+    const Vec3 feet = StandingSpot(w, s);
+    CHECK(std::fabs(feet.y - 0.5f) < 0.01f);                     // on the stage, not the floor under it
+    auto worst = [](const std::vector<LevelIssue>& v) { int m = -1; for (const LevelIssue& i : v) m = std::max(m, i.severity); return m; };
+    auto has = [](const std::vector<LevelIssue>& v, const char* t) { for (const LevelIssue& i : v) if (i.text.find(t) != std::string::npos) return true; return false; };
+    CHECK(worst(CheckLevel(w, contentDir)) < 2);
+
+    // she stands where the level says, facing its way
+    {
+        TestJenny j;
+        CHECK(j.Init(w, feet, s.yawDeg * 3.14159265f / 180.f));
+        j.Run(w, 2.f);
+        const Vec3 p = j.motor.Position();
+        CHECK(p.y > 0.45f && std::hypot(p.x - 2.f, p.z) < 0.25f);
+    }
+    // a start inside a wall, and no start at all, are reported
+    {
+        Zone bad = z;
+        bad.entities.push_back(Ent(7, "Wall", "static", {2.f, 1.3f, 0.f}, {3.f, 2.6f, 0.3f}));
+        World wb;
+        wb.SetContentRoot(contentDir);
+        wb.SetZone(bad);
+        CHECK(worst(CheckLevel(wb, contentDir)) == 2);
+        Zone none = z;
+        none.entities.erase(std::remove_if(none.entities.begin(), none.entities.end(), [](const Entity& e) { return e.type == "start"; }), none.entities.end());
+        World wn;
+        wn.SetContentRoot(contentDir);
+        wn.SetZone(none);
+        CHECK(has(CheckLevel(wn, contentDir), "No Jenny start"));
+        Zone air = z;
+        for (Entity& e : air.entities) if (e.type == "start") e.pos = {30.f, 1.f, 30.f};   // off the floor
+        World wa;
+        wa.SetZone(air);
+        CHECK(worst(CheckLevel(wa, contentDir)) == 2);
+    }
+    // export, baked: the objects become plain parts and the level loads on its own
+    {
+        const fs::path tmp = fs::temp_directory_path() / "eon_test_levels";
+        std::error_code ec;
+        fs::remove_all(tmp, ec);
+        fs::create_directories(tmp / "objects");
+        fs::copy_file(fs::path(contentDir) / "objects/chair.json", tmp / "objects/chair.json");
+        ExportOptions o;
+        o.name = "stage";
+        o.title = "The stage";
+        o.bakeObjects = true;
+        std::string path, err;
+        CHECK(ExportLevel(tmp.string(), z, o, &path, &err));
+        Zone back;
+        CHECK(LoadZone(path, back, &err));
+        int prefabs = 0;
+        for (const Entity& e : back.entities) prefabs += e.type == "prefab";
+        CHECK(prefabs == 0 && back.FindByName("Chair.Seat") && back.FindByName("Chair.Leg1"));
+        CHECK(back.FindByName("Chair.Leg1") && back.FindByName("Chair.Leg1")->params.value("weld", std::string()) == "Chair.Seat");
+        CHECK(FindStart(back).found);
+        World wl;
+        wl.SetContentRoot((tmp / "nothing_here").string());          // no object files needed any more
+        wl.SetZone(back);
+        CHECK(wl.Welded(back.FindByName("Chair.Seat")->id, back.FindByName("Chair.Leg1")->id));
+        const auto levels = ListLevels(tmp.string());
+        CHECK(levels.size() == 1 && levels[0].name == "stage" && levels[0].title == "The stage" && levels[0].hasStart);
+        CHECK(!ExportLevel(tmp.string(), z, ExportOptions{"bad/name"}, &path, &err));
+        fs::remove_all(tmp, ec);
     }
 }
 
@@ -2178,6 +2278,7 @@ int main(int argc, char** argv) {
     RUN(TestPicksFruit);
     RUN(TestNewMaps, content);
     RUN(TestStockObjects, content);
+    RUN(TestLevels, content);
     RUN(TestWalksOnTerrain, content);
     RUN(TestJennyDrinksEatsPees);
     RUN(TestStepAndClimb);

@@ -79,6 +79,7 @@ add_library(eon_core STATIC
     engine/core/World_Outdoor.cpp
     engine/core/World_Plants.cpp
     engine/core/MapGen.cpp
+    engine/core/Level.cpp
     engine/core/World_Scripts.cpp
     engine/core/Physics.cpp)
 target_include_directories(eon_core PUBLIC engine)

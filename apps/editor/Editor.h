@@ -10,6 +10,7 @@
 
 #include "raylib.h"
 
+#include "core/Level.h"
 #include "core/MapGen.h"
 #include "core/World.h"
 #include "render/ZoneRenderer.h"
@@ -109,6 +110,10 @@ struct Editor {
     // clipboard (entities + their links, as JSON) and the array dialog
     std::string clipboard;
     bool showArray = false;
+    // levels (export for the sim, play with Jenny)
+    bool showExport = false;
+    ExportOptions exportOpts;
+    std::vector<LevelIssue> issues;
     int arrayCount = 4;
     Vec3 arrayOffset{1.f, 0.f, 0.f};
     float arrayYaw = 0.f;
@@ -170,6 +175,9 @@ struct Editor {
     void Copy();
     void Paste(const Vec3& at);
     void FrameSelection();
+    std::vector<LevelIssue> RunChecks();                  // CheckLevel on a copy of the map
+    void LaunchSim(const std::string& file);              // eon_sim with Jenny in this map/level
+    void PlayWithJenny();                                 // save, then LaunchSim
     bool Electrical(const Entity& e) const;
 };
 

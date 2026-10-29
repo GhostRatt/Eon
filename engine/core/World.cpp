@@ -172,6 +172,7 @@ void World::BuildEntity(Entity& e) {
     }
     // hidden wires run inside walls: electrical only (ideal links), nothing physical or visible
     if (e.type == "wire" && e.params.value("hidden", false)) return;
+    if (e.type == "start") return;   // where Jenny starts in a level: the sim reads it, nothing in the world
     if (e.params.value("ghost", false)) { BuildDoor(e, -1); return; }   // markers and air volumes: no body, not drawn
     const Quat rot = Quat::FromEulerDeg(e.rotDeg);
     const Vec3 he = e.size * 0.5f;
